@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="manifest" href="manifest.json">
 </head>
 
 <body>
@@ -31,7 +32,9 @@
                     <input type="password" id="login-password" placeholder="Enter your password" required>
                 </div>
                 <div style="text-align: right; margin-top: -10px; margin-bottom: 16px;">
-                    <a href="#" id="forgot-password-link" style="font-size: 12px; color: var(--color-ticktick-blue); text-decoration: none;">Forgot Password?</a>
+                    <a href="#" id="forgot-password-link"
+                        style="font-size: 12px; color: var(--color-ticktick-blue); text-decoration: none;">Forgot
+                        Password?</a>
                 </div>
                 <button type="submit" class="btn btn-primary btn-block">Log In</button>
                 <div class="auth-toggle">
@@ -638,7 +641,7 @@
         window.signInWithEmailAndPassword = signInWithEmailAndPassword;
         window.signOut = signOut;
         window.onAuthStateChanged = onAuthStateChanged;
-        
+
         // الدوال الجديدة الخاصة بكلمة المرور والملف الشخصي
         window.sendPasswordResetEmail = sendPasswordResetEmail;
         window.updatePassword = updatePassword;

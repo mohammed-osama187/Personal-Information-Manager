@@ -1,0 +1,17 @@
+{
+    "name": "Smart Productivity Manager",
+    "short_name": "Productivity",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#F7F7F5",
+    "theme_color": "#2F7BF6",
+    "orientation": "portrait-primary",
+    "icons": [
+        {
+            "src": "https://cdn-icons-png.flaticon.com/512/2091/2091665.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}

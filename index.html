@@ -274,9 +274,11 @@
 
                         <div class="form-row" style="margin-top: 10px; gap: 16px;">
                             <div class="form-group" style="margin-bottom: 0;">
-                                <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Time Format</label>
+                                <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Time
+                                    Format</label>
                                 <div class="custom-select-wrapper" id="pref-time-format-wrapper">
-                                    <div class="custom-select-display" id="pref-time-format-display" style="padding-top: 9px; padding-bottom: 9px;">
+                                    <div class="custom-select-display" id="pref-time-format-display"
+                                        style="padding-top: 9px; padding-bottom: 9px;">
                                         12-Hour (AM/PM) <i class="fa-solid fa-chevron-down caret-icon"></i>
                                     </div>
                                     <div class="custom-select-options" id="pref-time-format-options">
@@ -287,9 +289,11 @@
                                 </div>
                             </div>
                             <div class="form-group" style="margin-bottom: 0;">
-                                <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Dashboard View</label>
+                                <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Dashboard
+                                    View</label>
                                 <div class="custom-select-wrapper" id="pref-dashboard-layout-wrapper">
-                                    <div class="custom-select-display" id="pref-dashboard-layout-display" style="padding-top: 9px; padding-bottom: 9px;">
+                                    <div class="custom-select-display" id="pref-dashboard-layout-display"
+                                        style="padding-top: 9px; padding-bottom: 9px;">
                                         Standard List <i class="fa-solid fa-chevron-down caret-icon"></i>
                                     </div>
                                     <div class="custom-select-options" id="pref-dashboard-layout-options">
@@ -566,7 +570,8 @@
                     <!-- Buttons generated dynamically for desktop -->
                 </div>
                 <div class="details-actions-mobile" id="details-actions-mobile">
-                    <button type="button" class="details-kebab-btn" id="details-kebab-btn"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+                    <button type="button" class="details-kebab-btn" id="details-kebab-btn"><i
+                            class="fa-solid fa-ellipsis-vertical"></i></button>
                     <div class="details-kebab-menu" id="details-kebab-menu">
                         <!-- Options generated dynamically for mobile -->
                     </div>
@@ -591,6 +596,31 @@
     <div id="toast-container" class="toast-container"></div>
 
     <script src="js/app.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, doc, updateDoc, getDocs, deleteDoc, getDoc, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCGU9sUd4lj8_vdStcBd_DtYauvktlEKeA",
+            authDomain: "personal-information-man-b9476.firebaseapp.com",
+            projectId: "personal-information-man-b9476",
+            storageBucket: "personal-information-man-b9476.firebasestorage.app",
+            messagingSenderId: "586841086624",
+            appId: "1:586841086624:web:84f0f65944e53ba98747c5"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        window.db = getFirestore(app);
+        window.collection = collection;
+        window.addDoc = addDoc;
+        window.doc = doc;
+        window.updateDoc = updateDoc;
+        window.getDocs = getDocs;
+        window.deleteDoc = deleteDoc;
+        window.getDoc = getDoc;
+        window.query = query;
+        window.where = where;
+    </script>
 </body>
 
 </html>

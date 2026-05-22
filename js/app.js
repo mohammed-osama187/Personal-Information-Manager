@@ -2,6 +2,85 @@ let db = null;
 const DB_NAME = 'ProductivityAppDB';
 const DB_VERSION = 1;
 
+// ==========================================
+// Firebase Firestore Integration Helpers
+// ==========================================
+async function getTasksFromFirebase() {
+    if (!window.db || !window.getDocs || !window.collection) {
+        const localData = localStorage.getItem('firebase_tasks_cache');
+        return localData ? JSON.parse(localData) : [];
+    }
+
+    // نحتاج معرفة من هو المستخدم الحالي لجلب بياناته فقط
+    const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+    const currentUserId = currentUser ? currentUser.id : 'guest';
+
+    try {
+        // إنشاء استعلام (Query) يجلب فقط المهام الخاصة بهذا المستخدم
+        const q = window.query(
+            window.collection(window.db, "tasks"), 
+            window.where("userId", "==", currentUserId)
+        );
+        
+        const querySnapshot = await window.getDocs(q);
+        const items = [];
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            data.id = doc.id; // Map Firestore ID
+            items.push(data);
+        });
+        
+        localStorage.setItem('firebase_tasks_cache', JSON.stringify(items));
+        return items;
+    } catch (e) {
+        console.error("Error fetching tasks from Firebase:", e);
+        const localData = localStorage.getItem('firebase_tasks_cache');
+        return localData ? JSON.parse(localData) : [];
+    }
+}
+
+async function saveTaskToFirebase(item) {
+    if (!window.db || !window.addDoc || !window.collection) {
+        console.error("Firebase not loaded yet.");
+        return;
+    }
+    try {
+        const itemCopy = { ...item };
+        const id = itemCopy.id;
+        delete itemCopy.id;
+
+        Object.keys(itemCopy).forEach(key => {
+            if (itemCopy[key] === undefined) {
+                itemCopy[key] = null;
+            }
+        });
+
+        if (id) {
+            const docRef = window.doc(window.db, "tasks", String(id));
+            await window.updateDoc(docRef, itemCopy);
+        } else {
+            await window.addDoc(window.collection(window.db, "tasks"), itemCopy);
+        }
+    } catch (e) {
+        console.error("Error saving task to Firebase:", e);
+        throw e;
+    }
+}
+
+async function deleteTaskFromFirebase(id) {
+    if (!window.db || !window.deleteDoc || !window.doc) {
+        console.error("Firebase not loaded yet.");
+        return;
+    }
+    try {
+        const docRef = window.doc(window.db, "tasks", String(id));
+        await window.deleteDoc(docRef);
+    } catch (e) {
+        console.error("Error deleting task from Firebase:", e);
+        throw e;
+    }
+}
+
 let sessionMinutes = 25;
 let timeLeft = 25 * 60;
 let timerInterval = null;
@@ -492,8 +571,6 @@ function initOfflineNotifications() {
 
     // Checking every 1 second for absolute real-time reminders and notifications
     setInterval(() => {
-        if(!db) return;
-        
         const now = new Date();
         const year = now.getFullYear();
         const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -507,76 +584,75 @@ function initOfflineNotifications() {
         const currentUser = JSON.parse(localStorage.getItem('currentUser'));
         const currentUserId = currentUser ? currentUser.id : 'guest';
 
-        const tx = db.transaction(['tasks'], 'readwrite');
-        const store = tx.objectStore('tasks');
+        const items = (window.allActiveItemsList || []).filter(item => 
+            item.userId === currentUserId && 
+            !item.isCompleted && 
+            !item.isCancelled
+        );
         
-        store.getAll().onsuccess = (e) => {
-            const items = e.target.result.filter(item => 
-                item.userId === currentUserId && 
-                !item.isCompleted && 
-                !item.isCancelled
-            );
-            
-            items.forEach(item => {
-                // 1. Check if the task is overdue (if due date/time has passed and we haven't notified the user yet)
-                let dueInstant = null;
-                if (item.dueDate) {
-                    dueInstant = parseLocalISOString(item.dueDate, item.dueTime || '23:59');
-                }
-                if (dueInstant && dueInstant < now && !item.lastNotifiedOverdue) {
-                    item.lastNotifiedOverdue = true;
-                    store.put(item);
+        items.forEach(item => {
+            // 1. Check if the task is overdue (if due date/time has passed and we haven't notified the user yet)
+            let dueInstant = null;
+            if (item.dueDate) {
+                dueInstant = parseLocalISOString(item.dueDate, item.dueTime || '23:59');
+            }
+            if (dueInstant && dueInstant < now && !item.lastNotifiedOverdue) {
+                item.lastNotifiedOverdue = true;
+                saveTaskToFirebase(item).then(() => {
+                    displayTasks();
+                });
 
-                    // Fire instantly without delay
-                    showToast(`Overdue: ${item.title}`, 'error', true);
-                    playSound('error');
+                // Fire instantly without delay
+                showToast(`Overdue: ${item.title}`, 'error', true);
+                playSound('error');
 
-                    if ("Notification" in window && Notification.permission === "granted") {
-                        new Notification("Task Overdue!", {
-                            body: `The deadline for "${item.title}" has passed.`
-                        });
-                    }
-
-                    // Add to missed notifications queue
-                    addMissedNotification(`Overdue: ${item.title}`, item.dueTime || '23:59', 'overdue');
+                if ("Notification" in window && Notification.permission === "granted") {
+                    new Notification("Task Overdue!", {
+                        body: `The deadline for "${item.title}" has passed.`
+                    });
                 }
 
-                // 2. Regular startTime schedule reminders check
-                if (item.startTime !== currentTime) return; // Not the right minute
-                if (item.lastNotifiedDate === currentDate) return; // Already notified today
+                // Add to missed notifications queue
+                addMissedNotification(`Overdue: ${item.title}`, item.dueTime || '23:59', 'overdue');
+            }
 
-                let shouldNotify = false;
+            // 2. Regular startTime schedule reminders check
+            if (item.startTime !== currentTime) return; // Not the right minute
+            if (item.lastNotifiedDate === currentDate) return; // Already notified today
 
-                if (item.type === 'task') {
-                    if (item.startDate === currentDate) shouldNotify = true;
-                    // Check repeats
-                    else if (item.frequency === 'daily') shouldNotify = true;
-                    else if (item.frequency === 'specific_days' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
-                } else if (item.type === 'habit') {
-                    if (item.frequency === 'daily') shouldNotify = true;
-                    else if (item.frequency === 'specific_days' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
+            let shouldNotify = false;
+
+            if (item.type === 'task') {
+                if (item.startDate === currentDate) shouldNotify = true;
+                // Check repeats
+                else if (item.frequency === 'daily') shouldNotify = true;
+                else if (item.frequency === 'specific_days' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
+            } else if (item.type === 'habit') {
+                if (item.frequency === 'daily') shouldNotify = true;
+                else if (item.frequency === 'specific_days' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
+            }
+
+            if (shouldNotify) {
+                // Write to Firestore instantly to prevent duplicate reminders in subsequent checks
+                item.lastNotifiedDate = currentDate;
+                saveTaskToFirebase(item).then(() => {
+                    displayTasks();
+                });
+
+                // Fire instantly without delay
+                showToast(`Reminder: ${item.title}`, 'info', true);
+                playSound('success');
+
+                if ("Notification" in window && Notification.permission === "granted") {
+                    new Notification("Task Reminder", {
+                        body: `It's time for: ${item.title}`
+                    });
                 }
 
-                if (shouldNotify) {
-                    // Write to IndexedDB instantly to prevent duplicate reminders in subsequent checks
-                    item.lastNotifiedDate = currentDate;
-                    store.put(item);
-
-                    // Fire instantly without delay
-                    showToast(`Reminder: ${item.title}`, 'info', true);
-                    playSound('success');
-
-                    if ("Notification" in window && Notification.permission === "granted") {
-                        new Notification("Task Reminder", {
-                            body: `It's time for: ${item.title}`
-                        });
-                    }
-
-                    // Add to missed notifications queue
-                    addMissedNotification(item.title, item.startTime, 'reminder');
-                }
-            });
-        };
+                // Add to missed notifications queue
+                addMissedNotification(item.title, item.startTime, 'reminder');
+            }
+        });
     }, 1000); // 1 second
 }
 
@@ -618,25 +694,21 @@ window.completeNotifTask = function(event, notifId, taskTitle) {
     // 1. Delete from notifications list
     deleteMissedNotification(notifId);
 
-    // 2. Complete task in db
-    if (!db) return;
-    const tx = db.transaction(['tasks'], 'readwrite');
-    const store = tx.objectStore('tasks');
-    store.getAll().onsuccess = (e) => {
-        const tasks = e.target.result;
+    // 2. Complete task in Firestore
+    getTasksFromFirebase().then(tasks => {
         const task = tasks.find(t => t.title === taskTitle && !t.isCompleted && !t.isCancelled);
         if (task) {
             task.isCompleted = true;
             task.completedAt = new Date().toISOString();
-            store.put(task).onsuccess = () => {
+            saveTaskToFirebase(task).then(() => {
                 showToast(`"${task.title}" marked as complete!`, 'success');
                 displayTasks();
                 if (window.calendarInstance) window.calendarInstance.refetchEvents();
-            };
+            });
         } else {
             showToast('Task already completed or not found.', 'info');
         }
-    };
+    });
 };
 
 window.cancelNotifTask = function(event, notifId, taskTitle) {
@@ -645,25 +717,21 @@ window.cancelNotifTask = function(event, notifId, taskTitle) {
     // 1. Delete from notifications list
     deleteMissedNotification(notifId);
 
-    // 2. Cancel task in db
-    if (!db) return;
-    const tx = db.transaction(['tasks'], 'readwrite');
-    const store = tx.objectStore('tasks');
-    store.getAll().onsuccess = (e) => {
-        const tasks = e.target.result;
+    // 2. Cancel task in Firestore
+    getTasksFromFirebase().then(tasks => {
         const task = tasks.find(t => t.title === taskTitle && !t.isCompleted && !t.isCancelled);
         if (task) {
             task.isCancelled = true;
             task.isCompleted = false;
-            store.put(task).onsuccess = () => {
+            saveTaskToFirebase(task).then(() => {
                 showToast(`"${task.title}" marked as Won't Do`, 'info');
                 displayTasks();
                 if (window.calendarInstance) window.calendarInstance.refetchEvents();
-            };
+            });
         } else {
             showToast('Task already completed or not found.', 'info');
         }
-    };
+    });
 };
 
 function renderMissedNotifications() {
@@ -993,11 +1061,23 @@ function initSettings() {
     });
 
     clearBtn.addEventListener('click', () => {
-        showConfirm('This will permanently delete all your tasks, habits, and events from this device. Are you sure?', () => {
-            const req = indexedDB.deleteDatabase(DB_NAME);
-            req.onsuccess = () => {
-                setTimeout(()=> window.location.reload(), 500);
-            };
+        showConfirm('This will permanently delete all your tasks, habits, and events. Are you sure?', () => {
+            const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+            const currentUserId = currentUser ? currentUser.id : 'guest';
+            getTasksFromFirebase().then(async (allItems) => {
+                const userTasks = allItems.filter(t => t.userId === currentUserId);
+                for (const task of userTasks) {
+                    await deleteTaskFromFirebase(task.id);
+                }
+                localStorage.removeItem('firebase_tasks_cache');
+                const req = indexedDB.deleteDatabase(DB_NAME);
+                req.onsuccess = () => {
+                    setTimeout(() => window.location.reload(), 500);
+                };
+                req.onerror = () => {
+                    setTimeout(() => window.location.reload(), 500);
+                };
+            });
         });
     });
 }
@@ -1096,12 +1176,12 @@ function initModalLogic() {
         const id = document.getElementById('edit-item-id').value;
         if(id) {
             showConfirm('Are you sure you want to delete this?', () => {
-                db.transaction(['tasks'], 'readwrite').objectStore('tasks').delete(parseInt(id)).onsuccess = () => {
+                deleteTaskFromFirebase(id).then(() => {
                     showToast('Deleted successfully', 'success', false); 
                     modal.classList.remove('active');
                     displayTasks();
                     if(window.calendarInstance) window.calendarInstance.refetchEvents();
-                };
+                });
             });
         }
     });
@@ -1163,8 +1243,8 @@ function openModalUI(type) {
 }
 
 window.editItem = function(id) {
-    db.transaction(['tasks'], 'readonly').objectStore('tasks').get(parseInt(id)).onsuccess = (e) => {
-        const item = e.target.result;
+    getTasksFromFirebase().then(tasks => {
+        const item = tasks.find(t => String(t.id) === String(id));
         if(!item) return;
 
         document.getElementById('task-form').reset(); 
@@ -1255,7 +1335,7 @@ window.editItem = function(id) {
         if (detailsModal) detailsModal.classList.remove('active');
 
         openModalUI(item.type);
-    };
+    });
 };
 
 function initFormSubmit(modal) {
@@ -1347,23 +1427,29 @@ function initFormSubmit(modal) {
             dataItem.priority = 'medium';
         }
 
-        const tx = db.transaction(['tasks'], 'readwrite');
-        const store = tx.objectStore('tasks');
-        
+        if (!window.db) {
+            showToast('Connecting to the cloud, please wait a moment...', 'info');
+            return;
+        }
+
         if (editId) {
-            dataItem.id = parseInt(editId);
-            store.get(dataItem.id).onsuccess = (e) => {
-                const old = e.target.result;
-                dataItem.createdAt = old.createdAt;
-                dataItem.isCompleted = old.isCompleted;
-                dataItem.isCancelled = old.isCancelled || false;
-                dataItem.completedCount = old.completedCount || 0;
-                dataItem.lastNotifiedDate = old.lastNotifiedDate || null;
-                store.put(dataItem).onsuccess = () => finishSubmit('Updated successfully!', false);
-            };
+            // Update task in Firebase
+            const docRef = window.doc(window.db, "tasks", String(editId));
+            
+            const updateData = { ...dataItem };
+            delete updateData.isCompleted;
+            delete updateData.isCancelled;
+            delete updateData.completedCount;
+
+            window.updateDoc(docRef, updateData).then(() => {
+                finishSubmit('Updated successfully in the cloud!', false);
+            }).catch(e => console.error(e));
         } else {
+            // Save new task in Firebase
             dataItem.createdAt = new Date().getTime();
-            store.add(dataItem).onsuccess = () => finishSubmit('Created successfully!', false);
+            window.addDoc(window.collection(window.db, "tasks"), dataItem).then(() => {
+                finishSubmit('Saved successfully in Firebase!', false);
+            }).catch(e => console.error(e));
         }
 
         function finishSubmit(msg, playAudioFlag) {
@@ -1378,18 +1464,33 @@ function initFormSubmit(modal) {
 }
 
 function initDatabase() {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onsuccess = (event) => {
-        db = event.target.result;
-        displayTasks(); 
-        initCalendar();
-    };
-    request.onupgradeneeded = (event) => {
-        const database = event.target.result;
-        if (!database.objectStoreNames.contains('tasks')) {
-            database.createObjectStore('tasks', { keyPath: 'id', autoIncrement: true });
+    // Disabled IndexedDB in favor of Firebase Firestore integration
+    // const request = indexedDB.open(DB_NAME, DB_VERSION);
+    // request.onsuccess = (event) => {
+    //     db = event.target.result;
+    //     displayTasks(); 
+    //     initCalendar();
+    // };
+    // request.onupgradeneeded = (event) => {
+    //     const database = event.target.result;
+    //     if (!database.objectStoreNames.contains('tasks')) {
+    //         database.createObjectStore('tasks', { keyPath: 'id', autoIncrement: true });
+    //     }
+    // };
+
+    displayTasks(); 
+    initCalendar();
+
+    // Dynamically poll until window.db is available, then refresh with live Firestore data!
+    const checkFb = setInterval(() => {
+        if (window.db) {
+            clearInterval(checkFb);
+            displayTasks();
+            if (window.calendarInstance) {
+                window.calendarInstance.refetchEvents();
+            }
         }
-    };
+    }, 100);
 }
 
 function formatTaskTimeDisplay(time24) {
@@ -1415,13 +1516,11 @@ function displayTasks() {
     const pomodoroSelect = document.getElementById('pomodoro-task-select');
     const pomodoroBtn = document.getElementById('pomodoro-mark-done');
 
-    if (!db) return;
-
     const currentUser = JSON.parse(localStorage.getItem('currentUser'));
     const currentUserId = currentUser ? currentUser.id : 'guest';
 
-    db.transaction(['tasks'], 'readonly').objectStore('tasks').getAll().onsuccess = (e) => {
-        const items = e.target.result.filter(item => item.userId === currentUserId);
+    getTasksFromFirebase().then(allItems => {
+        const items = allItems.filter(item => item.userId === currentUserId);
         
         if (habitsContainer) habitsContainer.innerHTML = '';
         if (historyContainer) historyContainer.innerHTML = '';
@@ -1431,6 +1530,7 @@ function displayTasks() {
 
         // Store active tasks globally for live ticking
         window.activeTasksList = tasks.filter(t => !t.isCompleted && !t.isCancelled).sort((a, b) => b.createdAt - a.createdAt);
+        window.allActiveItemsList = items.filter(t => !t.isCompleted && !t.isCancelled && !t.isDeleted);
         
         const activeHabits = habits.filter(t => !t.isCompleted).sort((a, b) => b.createdAt - a.createdAt);
         const historyItems = items.filter(t => (t.isCompleted || t.isCancelled || t.isDeleted) && t.type !== 'habit').sort((a, b) => b.createdAt - a.createdAt);
@@ -1508,7 +1608,7 @@ function displayTasks() {
                 item.subtasks.forEach((sub, idx) => {
                     subtasksHTML += `
                         <div class="subtask-item ${sub.completed ? 'completed' : ''}">
-                            <input type="checkbox" class="subtask-checkbox" ${sub.completed ? 'checked' : ''} onchange="toggleSubtask(${item.id}, ${idx}, ${sub.completed})">
+                            <input type="checkbox" class="subtask-checkbox" ${sub.completed ? 'checked' : ''} onchange="toggleSubtask('${item.id}', ${idx}, ${sub.completed})">
                             <span class="subtask-text">${sub.title}</span>
                         </div>
                     `;
@@ -1521,30 +1621,30 @@ function displayTasks() {
 
             if (isHistory) {
                 actionButtons = `
-                    <button onclick="restoreItem(${item.id})" class="btn-icon btn-edit" title="Restore"><i class="fa-solid fa-rotate-left"></i></button>
-                    <button onclick="deleteItem(${item.id})" class="btn-icon btn-delete" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                    <button onclick="restoreItem('${item.id}')" class="btn-icon btn-edit" title="Restore"><i class="fa-solid fa-rotate-left"></i></button>
+                    <button onclick="deleteItem('${item.id}')" class="btn-icon btn-delete" title="Delete"><i class="fa-solid fa-trash"></i></button>
                 `;
                 dropdownItems = `
-                    <button class="dropdown-item" onclick="restoreItem(${item.id})"><i class="fa-solid fa-rotate-left"></i> Restore</button>
-                    <button class="dropdown-item danger" onclick="deleteItem(${item.id})"><i class="fa-solid fa-trash"></i> Delete</button>
+                    <button class="dropdown-item" onclick="restoreItem('${item.id}')"><i class="fa-solid fa-rotate-left"></i> Restore</button>
+                    <button class="dropdown-item danger" onclick="deleteItem('${item.id}')"><i class="fa-solid fa-trash"></i> Delete</button>
                 `;
             } else {
-                let cancelBtnDesktop = (!item.isCompleted && !item.isCancelled && item.type !== 'habit') ? `<button onclick="cancelItem(${item.id})" class="btn-icon btn-cancel" title="Mark as Won't Do"><i class="fa-solid fa-ban"></i></button>` : '';
-                let cancelBtnMobile = (!item.isCompleted && !item.isCancelled && item.type !== 'habit') ? `<button class="dropdown-item" onclick="cancelItem(${item.id})"><i class="fa-solid fa-ban"></i> Won't Do</button>` : '';
+                let cancelBtnDesktop = (!item.isCompleted && !item.isCancelled && item.type !== 'habit') ? `<button onclick="cancelItem('${item.id}')" class="btn-icon btn-cancel" title="Mark as Won't Do"><i class="fa-solid fa-ban"></i></button>` : '';
+                let cancelBtnMobile = (!item.isCompleted && !item.isCancelled && item.type !== 'habit') ? `<button class="dropdown-item" onclick="cancelItem('${item.id}')"><i class="fa-solid fa-ban"></i> Won't Do</button>` : '';
                 
                 actionButtons = `
-                    <button onclick="editItem(${item.id})" class="btn-icon btn-edit" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                    <button onclick="editItem('${item.id}')" class="btn-icon btn-edit" title="Edit"><i class="fa-solid fa-pen"></i></button>
                     ${cancelBtnDesktop}
-                    <button onclick="deleteItem(${item.id})" class="btn-icon btn-delete" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                    <button onclick="deleteItem('${item.id}')" class="btn-icon btn-delete" title="Delete"><i class="fa-solid fa-trash"></i></button>
                 `;
                 dropdownItems = `
-                    <button class="dropdown-item" onclick="editItem(${item.id})"><i class="fa-solid fa-pen"></i> Edit</button>
+                    <button class="dropdown-item" onclick="editItem('${item.id}')"><i class="fa-solid fa-pen"></i> Edit</button>
                     ${cancelBtnMobile}
-                    <button class="dropdown-item danger" onclick="deleteItem(${item.id})"><i class="fa-solid fa-trash"></i> Delete</button>
+                    <button class="dropdown-item danger" onclick="deleteItem('${item.id}')"><i class="fa-solid fa-trash"></i> Delete</button>
                 `;
             }
 
-            let checkboxHTML = isHistory ? '' : `<input type="checkbox" class="custom-checkbox" ${item.isCompleted ? 'checked' : ''} ${item.isCancelled ? 'disabled' : ''} onchange="toggleItemComplete(${item.id}, ${item.isCompleted})">`;
+            let checkboxHTML = isHistory ? '' : `<input type="checkbox" class="custom-checkbox" ${item.isCompleted ? 'checked' : ''} ${item.isCancelled ? 'disabled' : ''} onchange="toggleItemComplete('${item.id}', ${item.isCompleted})">`;
 
             let dueInfo = '';
             if (item.dueDate) {
@@ -1552,7 +1652,7 @@ function displayTasks() {
             }
 
             return `
-                <div class="task-wrapper" onclick="showItemDetails(${item.id})">
+                <div class="task-wrapper" onclick="showItemDetails('${item.id}')">
                     <div class="task-item ${itemClass}" style="border-left-color: ${getColor(item.priority)}; border-left-width: 0;">
                         <div class="task-info-simple">
                             <span onclick="event.stopPropagation();">${checkboxHTML}</span>
@@ -1749,79 +1849,74 @@ function displayTasks() {
 
         window.sortAndRenderDashboard = sortAndRenderDashboard;
         sortAndRenderDashboard();
-    };
+    });
 }
 
 window.cancelItem = function(id) {
     showConfirm('Mark this task as "Won\'t Do"?', () => {
-        const store = db.transaction(['tasks'], 'readwrite').objectStore('tasks');
-        store.get(parseInt(id)).onsuccess = (e) => {
-            const item = e.target.result;
-            item.isCancelled = true;
-            item.isCompleted = false; 
-            store.put(item).onsuccess = () => {
-                showToast('Task marked as Won\'t Do', 'info', false);
-                displayTasks();
-                if(window.calendarInstance) window.calendarInstance.refetchEvents();
-            };
-        };
+        getTasksFromFirebase().then(tasks => {
+            const item = tasks.find(t => String(t.id) === String(id));
+            if (item) {
+                item.isCancelled = true;
+                item.isCompleted = false; 
+                saveTaskToFirebase(item).then(() => {
+                    showToast('Task marked as Won\'t Do', 'info', false);
+                    displayTasks();
+                    if(window.calendarInstance) window.calendarInstance.refetchEvents();
+                });
+            }
+        });
     });
 }
 
 window.restoreItem = function(id) {
-    const store = db.transaction(['tasks'], 'readwrite').objectStore('tasks');
-    store.get(parseInt(id)).onsuccess = (e) => {
-        const item = e.target.result;
-        item.isCompleted = false;
-        item.isCancelled = false;
-        item.isDeleted = false;
-        item.completedCount = 0;
-        store.put(item).onsuccess = () => {
-            showToast('Task restored!', 'info', false);
-            displayTasks();
-            if(window.calendarInstance) window.calendarInstance.refetchEvents();
-        };
-    };
+    getTasksFromFirebase().then(tasks => {
+        const item = tasks.find(t => String(t.id) === String(id));
+        if (item) {
+            item.isCompleted = false;
+            item.isCancelled = false;
+            item.isDeleted = false;
+            item.completedCount = 0;
+            saveTaskToFirebase(item).then(() => {
+                showToast('Task restored!', 'info', false);
+                displayTasks();
+                if(window.calendarInstance) window.calendarInstance.refetchEvents();
+            });
+        }
+    });
 }
 
 window.deleteItem = function(id) {
-    const store = db.transaction(['tasks'], 'readwrite').objectStore('tasks');
-    store.get(parseInt(id)).onsuccess = (e) => {
-        const item = e.target.result;
+    getTasksFromFirebase().then(tasks => {
+        const item = tasks.find(t => String(t.id) === String(id));
         if (!item) return;
         
-        // If it is already in history (isCompleted, isCancelled, or isDeleted), permanently delete it from IndexedDB!
         if (item.isCompleted || item.isCancelled || item.isDeleted) {
             showConfirm('Permanently delete this item from history?', () => {
-                const tx2 = db.transaction(['tasks'], 'readwrite');
-                tx2.objectStore('tasks').delete(parseInt(id)).onsuccess = () => {
+                deleteTaskFromFirebase(id).then(() => {
                     showToast('Permanently deleted', 'success', false);
                     displayTasks();
                     if(window.calendarInstance) window.calendarInstance.refetchEvents();
-                };
+                });
             });
         } else {
-            // Otherwise, mark as isDeleted = true and move to history page!
             showConfirm('Are you sure you want to delete this task?', () => {
-                const tx2 = db.transaction(['tasks'], 'readwrite');
-                const store2 = tx2.objectStore('tasks');
                 item.isDeleted = true;
                 item.isCompleted = false;
                 item.isCancelled = false;
-                store2.put(item).onsuccess = () => {
+                saveTaskToFirebase(item).then(() => {
                     showToast('Task moved to history', 'success', false);
                     displayTasks();
                     if(window.calendarInstance) window.calendarInstance.refetchEvents();
-                };
+                });
             });
         }
-    };
+    });
 }
 
 window.toggleItemComplete = function(id, currentStatus) {
-    const store = db.transaction(['tasks'], 'readwrite').objectStore('tasks');
-    store.get(parseInt(id)).onsuccess = (e) => {
-        const item = e.target.result;
+    getTasksFromFirebase().then(tasks => {
+        const item = tasks.find(t => String(t.id) === String(id));
         if (!item) return;
 
         if (!currentStatus) { 
@@ -1838,7 +1933,7 @@ window.toggleItemComplete = function(id, currentStatus) {
             item.isCompleted = false;
             item.completedCount = 0;
         }
-        store.put(item).onsuccess = () => {
+        saveTaskToFirebase(item).then(() => {
             displayTasks();
             if(window.calendarInstance) window.calendarInstance.refetchEvents();
             
@@ -1847,21 +1942,20 @@ window.toggleItemComplete = function(id, currentStatus) {
                 pomSelect.value = '';
                 document.getElementById('pomodoro-mark-done').style.display = 'none';
             }
-        };
-    };
+        });
+    });
 }
 
 window.toggleSubtask = function(taskId, subIdx, currentStatus) {
-    const store = db.transaction(['tasks'], 'readwrite').objectStore('tasks');
-    store.get(parseInt(taskId)).onsuccess = (e) => {
-        const item = e.target.result;
+    getTasksFromFirebase().then(tasks => {
+        const item = tasks.find(t => String(t.id) === String(taskId));
         if (item && item.subtasks) {
             item.subtasks[subIdx].completed = !currentStatus;
             // Only play sound when checking the box, not unchecking
             if(!currentStatus) playSound('check');
-            store.put(item).onsuccess = () => displayTasks();
+            saveTaskToFirebase(item).then(() => displayTasks());
         }
-    };
+    });
 };
 
 function getColor(priority) {
@@ -1874,8 +1968,8 @@ function getColor(priority) {
 // Details Modal Implementation & Action Bindings
 // ==========================================
 window.showItemDetails = function(id) {
-    db.transaction(['tasks'], 'readonly').objectStore('tasks').get(parseInt(id)).onsuccess = (e) => {
-        const item = e.target.result;
+    getTasksFromFirebase().then(tasks => {
+        const item = tasks.find(t => String(t.id) === String(id));
         if (!item) return;
 
         const modal = document.getElementById('details-modal');
@@ -1969,7 +2063,7 @@ window.showItemDetails = function(id) {
             item.subtasks.forEach((sub, idx) => {
                 subtasksHTML += `
                     <li class="details-subtask-item ${sub.completed ? 'completed' : ''}">
-                        <input type="checkbox" class="custom-checkbox" ${sub.completed ? 'checked' : ''} onchange="toggleSubtaskInDetails(${item.id}, ${idx}, ${sub.completed})">
+                        <input type="checkbox" class="custom-checkbox" ${sub.completed ? 'checked' : ''} onchange="toggleSubtaskInDetails('${item.id}', ${idx}, ${sub.completed})">
                         <span class="details-subtask-text">${sub.title}</span>
                     </li>
                 `;
@@ -1999,41 +2093,41 @@ window.showItemDetails = function(id) {
 
         // Desktop Icons-Only Actions
         let desktopHTML = `
-            <button class="btn btn-secondary" title="Delete" style="color: #FF4D4F; border-color: #FF4D4F33; background: #FF4D4F11;" onclick="deleteItemInDetails(${item.id})"><i class="fa-solid fa-trash"></i></button>
-            ${cancelBtn ? `<button class="btn btn-secondary" title="Won't Do" onclick="cancelItemInDetails(${item.id})"><i class="fa-solid fa-ban"></i></button>` : ''}
-            <button class="btn btn-primary" title="Edit" onclick="editItem(${item.id})"><i class="fa-solid fa-pen"></i></button>
+            <button class="btn btn-secondary" title="Delete" style="color: #FF4D4F; border-color: #FF4D4F33; background: #FF4D4F11;" onclick="deleteItemInDetails('${item.id}')"><i class="fa-solid fa-trash"></i></button>
+            ${cancelBtn ? `<button class="btn btn-secondary" title="Won't Do" onclick="cancelItemInDetails('${item.id}')"><i class="fa-solid fa-ban"></i></button>` : ''}
+            <button class="btn btn-primary" title="Edit" onclick="editItem('${item.id}')"><i class="fa-solid fa-pen"></i></button>
         `;
 
         if (!item.isCompleted && !item.isCancelled) {
             if (item.type === 'habit') {
                 let count = item.completedCount || 0;
-                desktopHTML += `<button class="btn btn-primary" title="Log Progress (${count}/${item.timesPerDay})" onclick="logHabitInDetails(${item.id})"><i class="fa-solid fa-check"></i></button>`;
+                desktopHTML += `<button class="btn btn-primary" title="Log Progress (${count}/${item.timesPerDay})" onclick="logHabitInDetails('${item.id}')"><i class="fa-solid fa-check"></i></button>`;
             } else {
-                desktopHTML += `<button class="btn btn-primary" style="background-color:#73D13D; border-color:#73D13D;" title="Complete" onclick="completeItemInDetails(${item.id})"><i class="fa-solid fa-check"></i></button>`;
+                desktopHTML += `<button class="btn btn-primary" style="background-color:#73D13D; border-color:#73D13D;" title="Complete" onclick="completeItemInDetails('${item.id}')"><i class="fa-solid fa-check"></i></button>`;
             }
         } else {
-            desktopHTML += `<button class="btn btn-secondary" title="Restore" onclick="restoreItemInDetails(${item.id})"><i class="fa-solid fa-rotate-left"></i></button>`;
+            desktopHTML += `<button class="btn btn-secondary" title="Restore" onclick="restoreItemInDetails('${item.id}')"><i class="fa-solid fa-rotate-left"></i></button>`;
         }
 
         // Mobile Dropdown Actions
         let mobileHTML = `
-            <button class="details-kebab-option" onclick="editItem(${item.id})"><i class="fa-solid fa-pen"></i> Edit</button>
+            <button class="details-kebab-option" onclick="editItem('${item.id}')"><i class="fa-solid fa-pen"></i> Edit</button>
         `;
         if (cancelBtn) {
-            mobileHTML += `<button class="details-kebab-option" onclick="cancelItemInDetails(${item.id})"><i class="fa-solid fa-ban"></i> Won't Do</button>`;
+            mobileHTML += `<button class="details-kebab-option" onclick="cancelItemInDetails('${item.id}')"><i class="fa-solid fa-ban"></i> Won't Do</button>`;
         }
         if (!item.isCompleted && !item.isCancelled) {
             if (item.type === 'habit') {
                 let count = item.completedCount || 0;
-                mobileHTML += `<button class="details-kebab-option" onclick="logHabitInDetails(${item.id})"><i class="fa-solid fa-check"></i> Log Progress (${count}/${item.timesPerDay})</button>`;
+                mobileHTML += `<button class="details-kebab-option" onclick="logHabitInDetails('${item.id}')"><i class="fa-solid fa-check"></i> Log Progress (${count}/${item.timesPerDay})</button>`;
             } else {
-                mobileHTML += `<button class="details-kebab-option" onclick="completeItemInDetails(${item.id})"><i class="fa-solid fa-check"></i> Complete</button>`;
+                mobileHTML += `<button class="details-kebab-option" onclick="completeItemInDetails('${item.id}')"><i class="fa-solid fa-check"></i> Complete</button>`;
             }
         } else {
-            mobileHTML += `<button class="details-kebab-option" onclick="restoreItemInDetails(${item.id})"><i class="fa-solid fa-rotate-left"></i> Restore</button>`;
+            mobileHTML += `<button class="details-kebab-option" onclick="restoreItemInDetails('${item.id}')"><i class="fa-solid fa-rotate-left"></i> Restore</button>`;
         }
         mobileHTML += `
-            <button class="details-kebab-option delete" onclick="deleteItemInDetails(${item.id})"><i class="fa-solid fa-trash"></i> Delete</button>
+            <button class="details-kebab-option delete" onclick="deleteItemInDetails('${item.id}')"><i class="fa-solid fa-trash"></i> Delete</button>
         `;
 
         const desktopContainer = document.getElementById('details-actions-desktop');
@@ -2069,22 +2163,21 @@ window.showItemDetails = function(id) {
         };
 
         modal.classList.add('active');
-    };
+    });
 };
 
 window.toggleSubtaskInDetails = function(itemId, subIdx, currentStatus) {
-    const store = db.transaction(['tasks'], 'readwrite').objectStore('tasks');
-    store.get(parseInt(itemId)).onsuccess = (e) => {
-        const item = e.target.result;
+    getTasksFromFirebase().then(tasks => {
+        const item = tasks.find(t => String(t.id) === String(itemId));
         if (item && item.subtasks) {
             item.subtasks[subIdx].completed = !currentStatus;
             if(!currentStatus) playSound('check');
-            store.put(item).onsuccess = () => {
+            saveTaskToFirebase(item).then(() => {
                 displayTasks();
                 showItemDetails(itemId); // dynamically refresh the details page!
-            };
+            });
         }
-    };
+    });
 };
 
 window.completeItemInDetails = function(id) {
@@ -2125,9 +2218,21 @@ function initCalendar() {
         buttonText: { today: 'Today', month: 'Month', week: 'Week', day: 'Day' },
         eventClick: function(info) { if(info.event.id) showItemDetails(info.event.id); },
         events: function(info, successCallback, failureCallback) {
-            if(!db) { successCallback([]); return; }
             const currentUser = JSON.parse(localStorage.getItem('currentUser'));
             const currentUserId = currentUser ? currentUser.id : 'guest';
+
+            function parseLocalDate(dateStr) {
+                if (!dateStr) return new Date();
+                const parts = dateStr.split('-');
+                return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+            }
+            
+            function formatLocalDate(dateObj) {
+                const y = dateObj.getFullYear();
+                const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+                const d = String(dateObj.getDate()).padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            }
 
             // Load calendar filtering preferences
             const prefs = JSON.parse(localStorage.getItem('calendarPreferences')) || {
@@ -2136,9 +2241,9 @@ function initCalendar() {
                 showHabits: true
             };
 
-            db.transaction(['tasks'], 'readonly').objectStore('tasks').getAll().onsuccess = (e) => {
+            getTasksFromFirebase().then(items => {
                 const allEvents = [];
-                e.target.result.forEach(item => {
+                items.forEach(item => {
                     if (item.userId !== currentUserId) return; 
 
                     const isTask = (item.type === 'task' || !item.type);
@@ -2158,14 +2263,22 @@ function initCalendar() {
                     let className = item.isCompleted ? 'completed-event' : '';
                     if (item.isCancelled) className = 'cancelled-event';
                     
-                    // Render recurring Habits up to 3 months into the future
-                    if (isHabit) {
-                        let currDate = new Date(item.startDate);
+                    const hasRepeat = item.frequency && item.frequency !== 'none';
+                    
+                    // Render recurring Tasks and Habits up to 3 months into the future
+                    // Render recurring Tasks and Habits up to 3 months into the future
+                    if (hasRepeat) {
+                        let currDate = parseLocalDate(item.startDate);
                         let limitDate = new Date(currDate);
                         limitDate.setMonth(limitDate.getMonth() + 3);
+                        if (item.dueDate) {
+                            const dueLimit = parseLocalDate(item.dueDate);
+                            if (dueLimit < limitDate) {
+                                limitDate = dueLimit;
+                            }
+                        }
                         
-                        const startZeroDate = new Date(item.startDate);
-                        startZeroDate.setHours(0,0,0,0);
+                        const startZeroDate = parseLocalDate(item.startDate);
                         
                         while(currDate <= limitDate) {
                             let currentDayOfWeek = currDate.getDay();
@@ -2196,8 +2309,13 @@ function initCalendar() {
                                         shouldRender = true;
                                     }
                                 } else if (unit === 'weeks') {
-                                    const diffTime = Math.abs(currDate - startZeroDate);
-                                    const diffWeeks = Math.floor(diffTime / (1000 * 60 * 60 * 24 * 7));
+                                    const startSunday = new Date(startZeroDate);
+                                    startSunday.setDate(startSunday.getDate() - startSunday.getDay());
+                                    const currSunday = new Date(currDate);
+                                    currSunday.setDate(currSunday.getDate() - currSunday.getDay());
+                                    const diffTime = Math.abs(currSunday - startSunday);
+                                    const diffWeeks = Math.round(diffTime / (1000 * 60 * 60 * 24 * 7));
+                                    
                                     if (diffWeeks % num === 0 && item.specificDays && item.specificDays.includes(currentDayOfWeek)) {
                                         shouldRender = true;
                                     }
@@ -2212,26 +2330,26 @@ function initCalendar() {
                             }
                             
                             if (shouldRender) {
-                                let dateStr = currDate.toISOString().split('T')[0];
+                                let dateStr = formatLocalDate(currDate);
                                 let eventStart = dateStr + (item.startTime ? 'T' + item.startTime : '');
                                 allEvents.push({ id: item.id, title: item.title, start: eventStart, color: color, className: className, allDay: !item.startTime });
                             }
                             currDate.setDate(currDate.getDate() + 1);
                         }
                     } else if (isTask && item.dueDate && item.dueDate !== item.startDate) {
-                        let currDate = new Date(item.startDate);
-                        let endDateObj = new Date(item.dueDate);
+                        let currDate = parseLocalDate(item.startDate);
+                        let endDateObj = parseLocalDate(item.dueDate);
                         while(currDate <= endDateObj) {
-                            let dateStr = currDate.toISOString().split('T')[0];
+                            let dateStr = formatLocalDate(currDate);
                             let eventStart = dateStr + (item.startTime ? 'T' + item.startTime : '');
                             allEvents.push({ id: item.id, title: item.title, start: eventStart, color: color, className: className, allDay: !item.startTime });
                             currDate.setDate(currDate.getDate() + 1);
                         }
                     } else if (item.type === 'event' && item.endDate && item.endDate !== item.startDate) {
-                        let currDate = new Date(item.startDate);
-                        let endDateObj = new Date(item.endDate);
+                        let currDate = parseLocalDate(item.startDate);
+                        let endDateObj = parseLocalDate(item.endDate);
                         while(currDate <= endDateObj) {
-                            let dateStr = currDate.toISOString().split('T')[0];
+                            let dateStr = formatLocalDate(currDate);
                             let eventStart = dateStr + (item.startTime ? 'T' + item.startTime : '');
                             let eventEnd = item.endTime ? dateStr + 'T' + item.endTime : null;
                             allEvents.push({ id: item.id, title: item.title, start: eventStart, end: eventEnd, color: color, className: className });
@@ -2244,7 +2362,7 @@ function initCalendar() {
                     }
                 });
                 successCallback(allEvents);
-            };
+            });
         }
     });
 

@@ -835,18 +835,34 @@ function initAuth() {
     const signupForm = document.getElementById('signup-form');
     const logoutBtn = document.getElementById('logout-btn');
 
-    const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-    if (currentUser) {
-        authScreen.style.display = 'none';
-        appScreen.style.display = 'flex';
-        document.getElementById('display-username').textContent = currentUser.name;
-        const dTitle = document.getElementById('dashboard-title');
-        if (dTitle) {
-            dTitle.textContent = `Hello, ${currentUser.name}`;
-        }
-    } else {
-        authScreen.style.display = 'flex';
-        appScreen.style.display = 'none';
+    // المستمع اللحظي (Listener) لحالة المستخدم من Firebase
+    if (window.auth) {
+        window.onAuthStateChanged(window.auth, (user) => {
+            if (user) {
+                // المستخدم مسجل دخول
+                const currentUser = {
+                    id: user.uid, // استخدام הـ UID الموحد من فايربيز
+                    email: user.email,
+                    name: user.email.split('@')[0] // استخدام أول جزء من الإيميل كاسم مؤقت
+                };
+                localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                
+                authScreen.style.display = 'none';
+                appScreen.style.display = 'flex';
+                document.getElementById('display-username').textContent = currentUser.name;
+                const dTitle = document.getElementById('dashboard-title');
+                if (dTitle) dTitle.textContent = `Hello, ${currentUser.name}`;
+                
+                // جلب المهام بعد التأكد من تسجيل الدخول
+                displayTasks();
+                if(window.calendarInstance) window.calendarInstance.refetchEvents();
+            } else {
+                // المستخدم غير مسجل دخول
+                localStorage.removeItem('currentUser');
+                authScreen.style.display = 'flex';
+                appScreen.style.display = 'none';
+            }
+        });
     }
 
     window.toggleAuth = function(type) {
@@ -861,21 +877,23 @@ function initAuth() {
 
     signupForm.addEventListener('submit', (e) => {
         e.preventDefault();
-        const name = document.getElementById('signup-name').value;
         const email = document.getElementById('signup-email').value;
         const password = document.getElementById('signup-password').value;
+        const confirmPassword = document.getElementById('signup-confirm-password').value;
 
-        let users = JSON.parse(localStorage.getItem('users')) || [];
-        if (users.find(u => u.email === email)) {
-            showToast('Email already exists! Please log in.', 'error');
+        if (password !== confirmPassword) {
+            showToast('Passwords do not match!', 'error');
             return;
         }
 
-        const newUser = { id: Date.now(), name, email, password };
-        users.push(newUser);
-        localStorage.setItem('users', JSON.stringify(users));
-        localStorage.setItem('currentUser', JSON.stringify(newUser));
-        window.location.reload(); 
+        window.createUserWithEmailAndPassword(window.auth, email, password)
+            .then((userCredential) => {
+                showToast('Account created successfully!', 'success');
+                // Firebase will automatically trigger onAuthStateChanged
+            })
+            .catch((error) => {
+                showToast(error.message, 'error');
+            });
     });
 
     loginForm.addEventListener('submit', (e) => {
@@ -883,21 +901,43 @@ function initAuth() {
         const email = document.getElementById('login-email').value;
         const password = document.getElementById('login-password').value;
 
-        let users = JSON.parse(localStorage.getItem('users')) || [];
-        const user = users.find(u => u.email === email && u.password === password);
-
-        if (user) {
-            localStorage.setItem('currentUser', JSON.stringify(user));
-            window.location.reload();
-        } else {
-            showToast('Invalid email or password!', 'error');
-        }
+        window.signInWithEmailAndPassword(window.auth, email, password)
+            .then((userCredential) => {
+                showToast('Logged in successfully!', 'success');
+            })
+            .catch((error) => {
+                showToast('Invalid email or password!', 'error');
+            });
     });
 
     logoutBtn.addEventListener('click', () => {
-        localStorage.removeItem('currentUser');
-        window.location.reload();
+        window.signOut(window.auth).then(() => {
+            showToast('Logged out successfully', 'info');
+        }).catch((error) => console.error(error));
     });
+
+    // كود نسيت كلمة المرور (Forgot Password)
+    const forgotPassLink = document.getElementById('forgot-password-link');
+    if (forgotPassLink) {
+        forgotPassLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            const emailInput = document.getElementById('login-email').value;
+            
+            if (!emailInput) {
+                showToast('Please enter your email address first!', 'info');
+                document.getElementById('login-email').focus();
+                return;
+            }
+
+            window.sendPasswordResetEmail(window.auth, emailInput)
+                .then(() => {
+                    showToast('Password reset link sent to your email!', 'success');
+                })
+                .catch((error) => {
+                    showToast(error.message, 'error');
+                });
+        });
+    }
 }
 
 function initSidebar() {
@@ -1041,23 +1081,33 @@ function initSettings() {
         const currentPass = document.getElementById('current-password').value;
         const newPass = document.getElementById('new-password').value;
 
-        if (currentPass !== currentUser.password) {
-            showToast('Current password incorrect!', 'error');
+        const user = window.auth.currentUser;
+        if (!user) {
+            showToast('You must be logged in!', 'error');
             return;
         }
 
-        currentUser.password = newPass;
-        localStorage.setItem('currentUser', JSON.stringify(currentUser));
-        
-        let users = JSON.parse(localStorage.getItem('users')) || [];
-        let index = users.findIndex(u => u.email === currentUser.email);
-        if (index > -1) {
-            users[index].password = newPass;
-            localStorage.setItem('users', JSON.stringify(users));
-        }
+        // 1. إنشاء تصريح بالباسورد القديم لإثبات هوية المستخدم
+        const credential = window.EmailAuthProvider.credential(user.email, currentPass);
 
-        passForm.reset();
-        showToast('Password updated securely!', 'success');
+        // 2. إعادة المصادقة (Re-authenticate)
+        window.reauthenticateWithCredential(user, credential)
+            .then(() => {
+                // 3. لو الباسورد القديم صح، نحدث للباسورد الجديد
+                return window.updatePassword(user, newPass);
+            })
+            .then(() => {
+                passForm.reset();
+                showToast('Password updated securely!', 'success');
+            })
+            .catch((error) => {
+                console.error(error);
+                if (error.code === 'auth/invalid-credential') {
+                    showToast('Current password incorrect!', 'error');
+                } else {
+                    showToast(error.message, 'error');
+                }
+            });
     });
 
     clearBtn.addEventListener('click', () => {

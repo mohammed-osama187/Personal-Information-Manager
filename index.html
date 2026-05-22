@@ -30,6 +30,9 @@
                     <label>Password</label>
                     <input type="password" id="login-password" placeholder="Enter your password" required>
                 </div>
+                <div style="text-align: right; margin-top: -10px; margin-bottom: 16px;">
+                    <a href="#" id="forgot-password-link" style="font-size: 12px; color: var(--color-ticktick-blue); text-decoration: none;">Forgot Password?</a>
+                </div>
                 <button type="submit" class="btn btn-primary btn-block">Log In</button>
                 <div class="auth-toggle">
                     Don't have an account? <span onclick="toggleAuth('signup')">Sign Up</span>
@@ -52,6 +55,10 @@
                 <div class="form-group">
                     <label>Password</label>
                     <input type="password" id="signup-password" placeholder="Create a password" required>
+                </div>
+                <div class="form-group">
+                    <label>Confirm Password</label>
+                    <input type="password" id="signup-confirm-password" placeholder="Confirm your password" required>
                 </div>
                 <button type="submit" class="btn btn-primary btn-block">Sign Up</button>
                 <div class="auth-toggle">
@@ -409,20 +416,20 @@
                     <div class="form-group id-task-only" id="deadline-time-container" style="flex: 1; display: block;">
                         <label>Deadline Time (Optional)</label>
                         <div class="custom-time-picker" id="time-picker-due">
-                            <div class="custom-select-wrapper time-hour-wrapper">
+                            <div class="custom-select-wrapper time-hour-wrapper open-upward">
                                 <div class="custom-select-display time-hour-display">-- <i
                                         class="fa-solid fa-chevron-down caret-icon"></i></div>
                                 <div class="custom-select-options time-hour-options"></div>
                                 <input type="hidden" class="time-hour-input" value="">
                             </div>
                             <div class="time-separator">:</div>
-                            <div class="custom-select-wrapper time-minute-wrapper">
+                            <div class="custom-select-wrapper time-minute-wrapper open-upward">
                                 <div class="custom-select-display time-minute-display">-- <i
                                         class="fa-solid fa-chevron-down caret-icon"></i></div>
                                 <div class="custom-select-options time-minute-options"></div>
                                 <input type="hidden" class="time-minute-input" value="">
                             </div>
-                            <div class="custom-select-wrapper time-ampm-wrapper">
+                            <div class="custom-select-wrapper time-ampm-wrapper open-upward">
                                 <div class="custom-select-display time-ampm-display">-- <i
                                         class="fa-solid fa-chevron-down caret-icon"></i></div>
                                 <div class="custom-select-options time-ampm-options"></div>
@@ -438,20 +445,20 @@
                     <div class="form-group id-event-only" style="display:none;">
                         <label>End Time</label>
                         <div class="custom-time-picker" id="time-picker-end">
-                            <div class="custom-select-wrapper time-hour-wrapper">
+                            <div class="custom-select-wrapper time-hour-wrapper open-upward">
                                 <div class="custom-select-display time-hour-display">-- <i
                                         class="fa-solid fa-chevron-down caret-icon"></i></div>
                                 <div class="custom-select-options time-hour-options"></div>
                                 <input type="hidden" class="time-hour-input" value="">
                             </div>
                             <div class="time-separator">:</div>
-                            <div class="custom-select-wrapper time-minute-wrapper">
+                            <div class="custom-select-wrapper time-minute-wrapper open-upward">
                                 <div class="custom-select-display time-minute-display">-- <i
                                         class="fa-solid fa-chevron-down caret-icon"></i></div>
                                 <div class="custom-select-options time-minute-options"></div>
                                 <input type="hidden" class="time-minute-input" value="">
                             </div>
-                            <div class="custom-select-wrapper time-ampm-wrapper">
+                            <div class="custom-select-wrapper time-ampm-wrapper open-upward">
                                 <div class="custom-select-display time-ampm-display">-- <i
                                         class="fa-solid fa-chevron-down caret-icon"></i></div>
                                 <div class="custom-select-options time-ampm-options"></div>
@@ -600,6 +607,9 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getFirestore, collection, addDoc, doc, updateDoc, getDocs, deleteDoc, getDoc, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
+        // استدعاء مكتبة المصادقة (Authentication) كاملة
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
         const firebaseConfig = {
             apiKey: "AIzaSyCGU9sUd4lj8_vdStcBd_DtYauvktlEKeA",
             authDomain: "personal-information-man-b9476.firebaseapp.com",
@@ -610,6 +620,7 @@
         };
 
         const app = initializeApp(firebaseConfig);
+
         window.db = getFirestore(app);
         window.collection = collection;
         window.addDoc = addDoc;
@@ -620,6 +631,19 @@
         window.getDoc = getDoc;
         window.query = query;
         window.where = where;
+
+        // تهيئة المصادقة وتصدير دوالها لملف app.js
+        window.auth = getAuth(app);
+        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
+        window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+        window.signOut = signOut;
+        window.onAuthStateChanged = onAuthStateChanged;
+        
+        // الدوال الجديدة الخاصة بكلمة المرور
+        window.sendPasswordResetEmail = sendPasswordResetEmail;
+        window.updatePassword = updatePassword;
+        window.EmailAuthProvider = EmailAuthProvider;
+        window.reauthenticateWithCredential = reauthenticateWithCredential;
     </script>
 </body>
 

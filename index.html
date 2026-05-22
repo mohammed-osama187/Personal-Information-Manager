@@ -608,7 +608,7 @@
         import { getFirestore, collection, addDoc, doc, updateDoc, getDocs, deleteDoc, getDoc, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         // استدعاء مكتبة المصادقة (Authentication) كاملة
-        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, updatePassword, EmailAuthProvider, reauthenticateWithCredential, updateProfile } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCGU9sUd4lj8_vdStcBd_DtYauvktlEKeA",
@@ -639,11 +639,12 @@
         window.signOut = signOut;
         window.onAuthStateChanged = onAuthStateChanged;
         
-        // الدوال الجديدة الخاصة بكلمة المرور
+        // الدوال الجديدة الخاصة بكلمة المرور والملف الشخصي
         window.sendPasswordResetEmail = sendPasswordResetEmail;
         window.updatePassword = updatePassword;
         window.EmailAuthProvider = EmailAuthProvider;
         window.reauthenticateWithCredential = reauthenticateWithCredential;
+        window.updateProfile = updateProfile;
     </script>
 </body>
 

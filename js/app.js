@@ -843,7 +843,7 @@ function initAuth() {
                 const currentUser = {
                     id: user.uid, // استخدام הـ UID الموحد من فايربيز
                     email: user.email,
-                    name: user.email.split('@')[0] // استخدام أول جزء من الإيميل كاسم مؤقت
+                    name: user.displayName || user.email.split('@')[0]
                 };
                 localStorage.setItem('currentUser', JSON.stringify(currentUser));
                 
@@ -877,6 +877,7 @@ function initAuth() {
 
     signupForm.addEventListener('submit', (e) => {
         e.preventDefault();
+        const name = document.getElementById('signup-name').value;
         const email = document.getElementById('signup-email').value;
         const password = document.getElementById('signup-password').value;
         const confirmPassword = document.getElementById('signup-confirm-password').value;
@@ -888,6 +889,10 @@ function initAuth() {
 
         window.createUserWithEmailAndPassword(window.auth, email, password)
             .then((userCredential) => {
+                const user = userCredential.user;
+                return window.updateProfile(user, { displayName: name });
+            })
+            .then(() => {
                 showToast('Account created successfully!', 'success');
                 // Firebase will automatically trigger onAuthStateChanged
             })
@@ -1062,18 +1067,25 @@ function initSettings() {
 
     form.addEventListener('submit', (e) => {
         e.preventDefault();
-        currentUser.name = nameInput.value;
-        localStorage.setItem('currentUser', JSON.stringify(currentUser));
-        
-        let users = JSON.parse(localStorage.getItem('users')) || [];
-        let index = users.findIndex(u => u.email === currentUser.email);
-        if (index > -1) {
-            users[index].name = currentUser.name;
-            localStorage.setItem('users', JSON.stringify(users));
+        const newName = nameInput.value;
+        const user = window.auth.currentUser;
+        if (!user) {
+            showToast('You must be logged in!', 'error');
+            return;
         }
 
-        document.getElementById('display-username').textContent = currentUser.name;
-        showToast('Profile updated successfully!', 'success', false); 
+        window.updateProfile(user, { displayName: newName })
+            .then(() => {
+                currentUser.name = newName;
+                localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                document.getElementById('display-username').textContent = newName;
+                const dTitle = document.getElementById('dashboard-title');
+                if (dTitle) dTitle.textContent = `Hello, ${newName}`;
+                showToast('Profile updated successfully!', 'success', false); 
+            })
+            .catch((error) => {
+                showToast(error.message, 'error');
+            });
     });
 
     passForm.addEventListener('submit', (e) => {

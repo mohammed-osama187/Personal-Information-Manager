@@ -6,14 +6,19 @@ const DB_VERSION = 1;
 // Firebase Firestore Integration Helpers
 // ==========================================
 async function getTasksFromFirebase() {
+    const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+    if (!currentUser) {
+        // Guest mode - fetch from local storage guest_tasks
+        const guestData = localStorage.getItem('guest_tasks');
+        return guestData ? JSON.parse(guestData) : [];
+    }
+
     if (!window.db || !window.getDocs || !window.collection) {
         const localData = localStorage.getItem('firebase_tasks_cache');
         return localData ? JSON.parse(localData) : [];
     }
 
-    // نحتاج معرفة من هو المستخدم الحالي لجلب بياناته فقط
-    const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-    const currentUserId = currentUser ? currentUser.id : 'guest';
+    const currentUserId = currentUser.id;
 
     try {
         // إنشاء استعلام (Query) يجلب فقط المهام الخاصة بهذا المستخدم
@@ -40,6 +45,24 @@ async function getTasksFromFirebase() {
 }
 
 async function saveTaskToFirebase(item) {
+    const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+    if (!currentUser) {
+        // Guest mode - save to local storage guest_tasks
+        let guestTasks = JSON.parse(localStorage.getItem('guest_tasks')) || [];
+        if (!item.id) {
+            item.id = 'guest_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+        
+        const idx = guestTasks.findIndex(t => String(t.id) === String(item.id));
+        if (idx > -1) {
+            guestTasks[idx] = item;
+        } else {
+            guestTasks.push(item);
+        }
+        localStorage.setItem('guest_tasks', JSON.stringify(guestTasks));
+        return;
+    }
+
     if (!window.db || !window.addDoc || !window.collection) {
         console.error("Firebase not loaded yet.");
         return;
@@ -68,6 +91,19 @@ async function saveTaskToFirebase(item) {
 }
 
 async function deleteTaskFromFirebase(id) {
+    const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+    if (window.cancelMobileNotification) {
+        window.cancelMobileNotification(id);
+        window.cancelMobileNotification(id + '_due');
+    }
+    if (!currentUser) {
+        // Guest mode - delete from local storage guest_tasks
+        let guestTasks = JSON.parse(localStorage.getItem('guest_tasks')) || [];
+        guestTasks = guestTasks.filter(t => String(t.id) !== String(id));
+        localStorage.setItem('guest_tasks', JSON.stringify(guestTasks));
+        return;
+    }
+
     if (!window.db || !window.deleteDoc || !window.doc) {
         console.error("Firebase not loaded yet.");
         return;
@@ -78,6 +114,48 @@ async function deleteTaskFromFirebase(id) {
     } catch (e) {
         console.error("Error deleting task from Firebase:", e);
         throw e;
+    }
+}
+
+// ==========================================
+// Guest Data Firestore Sync Engine
+// ==========================================
+async function syncGuestDataToFirebase(userId) {
+    const guestTasks = JSON.parse(localStorage.getItem('guest_tasks')) || [];
+    if (guestTasks.length === 0) return;
+
+    if (!window.db || !window.addDoc || !window.collection) {
+        console.warn("Firebase not fully loaded to sync guest data yet. Retrying in 1 second...");
+        setTimeout(() => syncGuestDataToFirebase(userId), 1000);
+        return;
+    }
+
+    showToast('Syncing your local guest tasks to the cloud...', 'info');
+
+    try {
+        for (const task of guestTasks) {
+            task.userId = userId;
+            if (task.id && task.id.startsWith('guest_')) {
+                delete task.id;
+            }
+            
+            Object.keys(task).forEach(key => {
+                if (task[key] === undefined) {
+                    task[key] = null;
+                }
+            });
+
+            await window.addDoc(window.collection(window.db, "tasks"), task);
+        }
+        
+        localStorage.removeItem('guest_tasks');
+        showToast('All guest tasks have been synced to the cloud!', 'success');
+        
+        displayTasks();
+        if(window.calendarInstance) window.calendarInstance.refetchEvents();
+    } catch (err) {
+        console.error("Error syncing guest data:", err);
+        showToast('Failed to sync some guest tasks. We will try again later.', 'error');
     }
 }
 
@@ -499,12 +577,46 @@ document.addEventListener('DOMContentLoaded', () => {
         if (doneBtn) doneBtn.style.display = val ? 'block' : 'none';
     });
 
+    // Initialize duration unit selection dropdown
+    window.customEventDurationUnitSelect = initCustomSelect('event-duration-unit-wrapper');
+
     window.timePickerStart = initCustomTimePicker('time-picker-start', true);
     window.timePickerEnd = initCustomTimePicker('time-picker-end', true);
     window.timePickerDue = initCustomTimePicker('time-picker-due', true);
 
     initPomodoroDrag();
     initModalLogic();
+
+    // Segmented layout view toggles in Task Header
+    const listBtn = document.getElementById('view-list-btn');
+    const kanbanBtn = document.getElementById('view-kanban-btn');
+    
+    function setDashboardLayout(layout) {
+        localStorage.setItem('dashboardLayout', layout);
+        if (listBtn && kanbanBtn) {
+            if (layout === 'kanban') {
+                listBtn.classList.remove('active');
+                kanbanBtn.classList.add('active');
+            } else {
+                listBtn.classList.add('active');
+                kanbanBtn.classList.remove('active');
+            }
+        }
+        // Sync the custom dropdown selector under settings if initialized
+        if (window.customDashboardLayoutSelect) {
+            window.customDashboardLayoutSelect.setValue(layout, layout === 'kanban' ? 'Kanban Board' : 'Standard List');
+        }
+        displayTasks();
+    }
+
+    if (listBtn && kanbanBtn) {
+        listBtn.addEventListener('click', () => setDashboardLayout('list'));
+        kanbanBtn.addEventListener('click', () => setDashboardLayout('kanban'));
+    }
+
+    // Set active class according to current setting on load
+    const initialLayout = localStorage.getItem('dashboardLayout') || 'list';
+    setDashboardLayout(initialLayout);
     initSettings();
     initOfflineNotifications(); 
     initMissedNotificationsUI(); 
@@ -617,8 +729,18 @@ function initOfflineNotifications() {
             }
 
             // 2. Regular startTime schedule reminders check
-            if (item.startTime !== currentTime) return; // Not the right minute
             if (item.lastNotifiedDate === currentDate) return; // Already notified today
+            
+            let isTimeOrPassed = false;
+            if (item.startTime) {
+                const [itemH, itemM] = item.startTime.split(':').map(Number);
+                const itemMinutes = itemH * 60 + itemM;
+                const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                if (currentMinutes >= itemMinutes) {
+                    isTimeOrPassed = true;
+                }
+            }
+            if (!isTimeOrPassed) return;
 
             let shouldNotify = false;
 
@@ -828,12 +950,148 @@ function initMissedNotificationsUI() {
     renderMissedNotifications();
 }
 
+// ==========================================
+// Unified Mobile Wrapper Notification Bridge
+// ==========================================
+window.scheduleMobileNotification = function(id, title, body, triggerTime) {
+    const delayMs = new Date(triggerTime).getTime() - Date.now();
+    if (delayMs <= 0) return;
+
+    // 1. Check for custom Android JavaScript Interface (Standard WebView)
+    if (window.AndroidBridge && typeof window.AndroidBridge.scheduleNotification === 'function') {
+        window.AndroidBridge.scheduleNotification(String(id), title, body, delayMs);
+        console.log(`[MobileBridge] Scheduled via AndroidBridge in ${delayMs}ms`);
+        return;
+    }
+
+    // 2. Check for Capacitor Local Notifications Plugin
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+        window.Capacitor.Plugins.LocalNotifications.schedule({
+            notifications: [{
+                id: Math.abs(parseInt(id)) || Math.floor(Math.random() * 1000000),
+                title: title,
+                body: body,
+                schedule: { at: new Date(triggerTime) },
+                sound: 'beep.wav',
+                actionTypeId: '',
+                extra: null
+            }]
+        }).then(() => {
+            console.log(`[MobileBridge] Scheduled via Capacitor at ${new Date(triggerTime)}`);
+        }).catch(err => {
+            console.error('[MobileBridge] Capacitor schedule failed:', err);
+        });
+        return;
+    }
+
+    // 3. Check for Cordova Local Notification Plugin
+    if (window.cordova && window.cordova.plugins && window.cordova.plugins.notification && window.cordova.plugins.notification.local) {
+        window.cordova.plugins.notification.local.schedule({
+            id: Math.abs(parseInt(id)) || Math.floor(Math.random() * 1000000),
+            title: title,
+            text: body,
+            trigger: { at: new Date(triggerTime) }
+        });
+        console.log(`[MobileBridge] Scheduled via Cordova at ${new Date(triggerTime)}`);
+        return;
+    }
+
+    console.log(`[MobileBridge] Web fallback. Will alert when active. Delay: ${delayMs}ms`);
+};
+
+window.cancelMobileNotification = function(id) {
+    if (window.AndroidBridge && typeof window.AndroidBridge.cancelNotification === 'function') {
+        window.AndroidBridge.cancelNotification(String(id));
+        return;
+    }
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+        window.Capacitor.Plugins.LocalNotifications.cancel({
+            notifications: [{ id: Math.abs(parseInt(id)) || 0 }]
+        });
+        return;
+    }
+    if (window.cordova && window.cordova.plugins && window.cordova.plugins.notification && window.cordova.plugins.notification.local) {
+        window.cordova.plugins.notification.local.cancel(Math.abs(parseInt(id)) || 0);
+        return;
+    }
+};
+
+window.scheduleItemNotifications = function(item) {
+    if (!item || item.isCompleted || item.isCancelled || item.isDeleted) {
+        if (item && item.id) {
+            cancelMobileNotification(item.id);
+            cancelMobileNotification(item.id + '_due');
+        }
+        return;
+    }
+
+    if (item.startDate) {
+        // 1. Schedule start reminder
+        if (item.startTime) {
+            const triggerTime = parseLocalISOString(item.startDate, item.startTime);
+            if (triggerTime && triggerTime > new Date()) {
+                const numericId = String(item.id).replace(/[^0-9]/g, '').slice(0, 8) || Math.floor(Math.random() * 1000000);
+                scheduleMobileNotification(
+                    numericId,
+                    'Task Reminder',
+                    `It's time for: ${item.title}`,
+                    triggerTime
+                );
+            }
+        }
+        // 2. Schedule due deadline reminder
+        if (item.dueDate && item.dueTime) {
+            const triggerTime = parseLocalISOString(item.dueDate, item.dueTime);
+            if (triggerTime && triggerTime > new Date()) {
+                const numericId = (String(item.id).replace(/[^0-9]/g, '').slice(0, 7) || Math.floor(Math.random() * 500000)) + '2';
+                scheduleMobileNotification(
+                    numericId,
+                    'Task Overdue!',
+                    `The deadline for "${item.title}" has passed.`,
+                    triggerTime
+                );
+            }
+        }
+    }
+};
+
 function initAuth() {
     const authScreen = document.getElementById('auth-screen');
     const appScreen = document.getElementById('app-screen');
     const loginForm = document.getElementById('login-form');
     const signupForm = document.getElementById('signup-form');
     const logoutBtn = document.getElementById('logout-btn');
+    const loginSidebarBtn = document.getElementById('login-sidebar-btn');
+
+    // Password visibility toggler
+    window.togglePasswordVisibility = function(inputId, iconEl) {
+        const input = document.getElementById(inputId);
+        if (!input) return;
+        if (input.type === 'password') {
+            input.type = 'text';
+            iconEl.classList.remove('fa-eye-slash');
+            iconEl.classList.add('fa-eye');
+        } else {
+            input.type = 'password';
+            iconEl.classList.remove('fa-eye');
+            iconEl.classList.add('fa-eye-slash');
+        }
+    };
+
+    // Close Auth overlay
+    window.closeAuthScreen = function(event) {
+        if (event) event.preventDefault();
+        authScreen.style.display = 'none';
+        appScreen.style.display = 'flex';
+    };
+
+    // Login Sidebar Button handler
+    if (loginSidebarBtn) {
+        loginSidebarBtn.addEventListener('click', () => {
+            authScreen.style.display = 'flex';
+            appScreen.style.display = 'none';
+        });
+    }
 
     // المستمع اللحظي (Listener) لحالة المستخدم من Firebase
     if (window.auth) {
@@ -853,14 +1111,45 @@ function initAuth() {
                 const dTitle = document.getElementById('dashboard-title');
                 if (dTitle) dTitle.textContent = `Hello, ${currentUser.name}`;
                 
+                // Show logout, hide login button
+                if (logoutBtn) logoutBtn.style.display = 'block';
+                if (loginSidebarBtn) loginSidebarBtn.style.display = 'none';
+
+                // Sync Guest tasks
+                syncGuestDataToFirebase(user.uid);
+                
                 // جلب المهام بعد التأكد من تسجيل الدخول
                 displayTasks();
                 if(window.calendarInstance) window.calendarInstance.refetchEvents();
+                initSettings();
             } else {
                 // المستخدم غير مسجل دخول
                 localStorage.removeItem('currentUser');
-                authScreen.style.display = 'flex';
-                appScreen.style.display = 'none';
+                
+                const justLoggedOut = localStorage.getItem('justLoggedOut');
+                if (justLoggedOut === 'true') {
+                    localStorage.removeItem('justLoggedOut');
+                    authScreen.style.display = 'flex';
+                    appScreen.style.display = 'none';
+                } else {
+                    // SHOW MAIN PAGE DIRECTLY AS GUEST!
+                    authScreen.style.display = 'none';
+                    appScreen.style.display = 'flex';
+                }
+                
+                const guestName = localStorage.getItem('guestName') || 'Guest User';
+                document.getElementById('display-username').textContent = guestName;
+                const dTitle = document.getElementById('dashboard-title');
+                if (dTitle) dTitle.textContent = `Hello, ${guestName}`;
+                
+                // Hide logout, show login button
+                if (logoutBtn) logoutBtn.style.display = 'none';
+                if (loginSidebarBtn) loginSidebarBtn.style.display = 'block';
+
+                // جلب المهام بعد التأكد من تسجيل الدخول
+                displayTasks();
+                if(window.calendarInstance) window.calendarInstance.refetchEvents();
+                initSettings();
             }
         });
     }
@@ -916,6 +1205,7 @@ function initAuth() {
     });
 
     logoutBtn.addEventListener('click', () => {
+        localStorage.setItem('justLoggedOut', 'true');
         window.signOut(window.auth).then(() => {
             showToast('Logged out successfully', 'info');
         }).catch((error) => console.error(error));
@@ -936,10 +1226,11 @@ function initAuth() {
 
             window.sendPasswordResetEmail(window.auth, emailInput)
                 .then(() => {
-                    showToast('Password reset link sent to your email!', 'success');
+                    showToast('Reset email sent! Please check your Inbox and Spam/Junk folder.', 'success');
                 })
                 .catch((error) => {
-                    showToast(error.message, 'error');
+                    console.error("Firebase Password Reset Error:", error);
+                    showToast('Failed to send reset link: ' + error.message, 'error');
                 });
         });
     }
@@ -1009,11 +1300,35 @@ function initSettings() {
     const emailInput = document.getElementById('settings-email');
     const clearBtn = document.getElementById('clear-data-btn');
     
+    if (!form) return;
+    
     const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-    if (!currentUser || !form) return;
+    
+    if (currentUser) {
+        nameInput.value = currentUser.name || '';
+        emailInput.value = currentUser.email || '';
+        emailInput.disabled = true;
+        if (passForm) {
+            passForm.style.opacity = '1';
+            passForm.style.pointerEvents = 'auto';
+            passForm.querySelectorAll('input, button').forEach(el => el.disabled = false);
+        }
+    } else {
+        // Guest Mode settings loading
+        const guestName = localStorage.getItem('guestName') || 'Guest User';
+        nameInput.value = guestName;
+        emailInput.value = 'guest@local.device';
+        emailInput.disabled = true;
+        if (passForm) {
+            passForm.style.opacity = '0.5';
+            passForm.style.pointerEvents = 'none';
+            passForm.querySelectorAll('input, button').forEach(el => el.disabled = true);
+        }
+    }
 
-    nameInput.value = currentUser.name;
-    emailInput.value = currentUser.email;
+    // Initialize preference selectors and toggles only ONCE
+    if (window.settingsInitialized) return;
+    window.settingsInitialized = true;
 
     // Calendar/App Preferences initialization
     const showTasksCb = document.getElementById('pref-show-tasks');
@@ -1060,6 +1375,17 @@ function initSettings() {
         const dashboardLayout = localStorage.getItem('dashboardLayout') || 'list';
         window.customDashboardLayoutSelect = initCustomSelect('pref-dashboard-layout-wrapper', (val) => {
             localStorage.setItem('dashboardLayout', val);
+            const listBtn = document.getElementById('view-list-btn');
+            const kanbanBtn = document.getElementById('view-kanban-btn');
+            if (listBtn && kanbanBtn) {
+                if (val === 'kanban') {
+                    listBtn.classList.remove('active');
+                    kanbanBtn.classList.add('active');
+                } else {
+                    listBtn.classList.add('active');
+                    kanbanBtn.classList.remove('active');
+                }
+            }
             displayTasks();
         });
         window.customDashboardLayoutSelect.setValue(dashboardLayout, dashboardLayout === 'kanban' ? 'Kanban Board' : 'Standard List');
@@ -1067,7 +1393,19 @@ function initSettings() {
 
     form.addEventListener('submit', (e) => {
         e.preventDefault();
-        const newName = nameInput.value;
+        const newName = nameInput.value.trim();
+        const currentUserId = JSON.parse(localStorage.getItem('currentUser'));
+        
+        if (!currentUserId) {
+            // Guest mode update profile name
+            localStorage.setItem('guestName', newName);
+            document.getElementById('display-username').textContent = newName;
+            const dTitle = document.getElementById('dashboard-title');
+            if (dTitle) dTitle.textContent = `Hello, ${newName}`;
+            showToast('Guest profile updated successfully!', 'success', false);
+            return;
+        }
+
         const user = window.auth.currentUser;
         if (!user) {
             showToast('You must be logged in!', 'error');
@@ -1076,8 +1414,9 @@ function initSettings() {
 
         window.updateProfile(user, { displayName: newName })
             .then(() => {
-                currentUser.name = newName;
-                localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                const cachedUser = JSON.parse(localStorage.getItem('currentUser')) || {};
+                cachedUser.name = newName;
+                localStorage.setItem('currentUser', JSON.stringify(cachedUser));
                 document.getElementById('display-username').textContent = newName;
                 const dTitle = document.getElementById('dashboard-title');
                 if (dTitle) dTitle.textContent = `Hello, ${newName}`;
@@ -1088,60 +1427,64 @@ function initSettings() {
             });
     });
 
-    passForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const currentPass = document.getElementById('current-password').value;
-        const newPass = document.getElementById('new-password').value;
+    if (passForm) {
+        passForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const currentPass = document.getElementById('current-password').value;
+            const newPass = document.getElementById('new-password').value;
 
-        const user = window.auth.currentUser;
-        if (!user) {
-            showToast('You must be logged in!', 'error');
-            return;
-        }
+            const user = window.auth.currentUser;
+            if (!user) {
+                showToast('You must be logged in!', 'error');
+                return;
+            }
 
-        // 1. إنشاء تصريح بالباسورد القديم لإثبات هوية المستخدم
-        const credential = window.EmailAuthProvider.credential(user.email, currentPass);
+            // 1. إنشاء تصريح بالباسورد القديم لإثبات هوية المستخدم
+            const credential = window.EmailAuthProvider.credential(user.email, currentPass);
 
-        // 2. إعادة المصادقة (Re-authenticate)
-        window.reauthenticateWithCredential(user, credential)
-            .then(() => {
-                // 3. لو الباسورد القديم صح، نحدث للباسورد الجديد
-                return window.updatePassword(user, newPass);
-            })
-            .then(() => {
-                passForm.reset();
-                showToast('Password updated securely!', 'success');
-            })
-            .catch((error) => {
-                console.error(error);
-                if (error.code === 'auth/invalid-credential') {
-                    showToast('Current password incorrect!', 'error');
-                } else {
-                    showToast(error.message, 'error');
-                }
-            });
-    });
+            // 2. إعادة المصادقة (Re-authenticate)
+            window.reauthenticateWithCredential(user, credential)
+                .then(() => {
+                    // 3. لو الباسورد القديم صح، نحدث للباسورد الجديد
+                    return window.updatePassword(user, newPass);
+                })
+                .then(() => {
+                    passForm.reset();
+                    showToast('Password updated securely!', 'success');
+                })
+                .catch((error) => {
+                    console.error(error);
+                    if (error.code === 'auth/invalid-credential') {
+                        showToast('Current password incorrect!', 'error');
+                    } else {
+                        showToast(error.message, 'error');
+                    }
+                });
+        });
+    }
 
-    clearBtn.addEventListener('click', () => {
-        showConfirm('This will permanently delete all your tasks, habits, and events. Are you sure?', () => {
-            const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-            const currentUserId = currentUser ? currentUser.id : 'guest';
-            getTasksFromFirebase().then(async (allItems) => {
-                const userTasks = allItems.filter(t => t.userId === currentUserId);
-                for (const task of userTasks) {
-                    await deleteTaskFromFirebase(task.id);
-                }
-                localStorage.removeItem('firebase_tasks_cache');
-                const req = indexedDB.deleteDatabase(DB_NAME);
-                req.onsuccess = () => {
-                    setTimeout(() => window.location.reload(), 500);
-                };
-                req.onerror = () => {
-                    setTimeout(() => window.location.reload(), 500);
-                };
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            showConfirm('This will permanently delete all your tasks, habits, and events. Are you sure?', () => {
+                const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+                const currentUserId = currentUser ? currentUser.id : 'guest';
+                getTasksFromFirebase().then(async (allItems) => {
+                    const userTasks = allItems.filter(t => t.userId === currentUserId);
+                    for (const task of userTasks) {
+                        await deleteTaskFromFirebase(task.id);
+                    }
+                    localStorage.removeItem('firebase_tasks_cache');
+                    const req = indexedDB.deleteDatabase(DB_NAME);
+                    req.onsuccess = () => {
+                        setTimeout(() => window.location.reload(), 500);
+                    };
+                    req.onerror = () => {
+                        setTimeout(() => window.location.reload(), 500);
+                    };
+                });
             });
         });
-    });
+    }
 }
 
 function renderTempSubtasks() {
@@ -1219,6 +1562,18 @@ function initModalLogic() {
             // Reset specific days
             document.querySelectorAll('.day-toggle input').forEach(cb => cb.checked = false);
 
+            // Reset event duration / date choice toggles
+            const defaultChoice = document.querySelector('input[name="event-end-choice"][value="date"]');
+            if (defaultChoice) {
+                defaultChoice.checked = true;
+                defaultChoice.dispatchEvent(new Event('change'));
+            }
+            const durationNumInput = document.getElementById('event-duration-num');
+            if (durationNumInput) durationNumInput.value = 60;
+            if (window.customEventDurationUnitSelect) {
+                window.customEventDurationUnitSelect.setValue('minutes', 'Minutes');
+            }
+
             tempSubtasks = [];
             renderTempSubtasks();
             
@@ -1246,6 +1601,27 @@ function initModalLogic() {
                 });
             });
         }
+    });
+
+    // Radio buttons change toggle logic inside Modal
+    const choiceRadios = document.querySelectorAll('input[name="event-end-choice"]');
+    const endDateGroup = document.getElementById('event-end-date-group');
+    const endTimeGroup = document.getElementById('event-end-time-group');
+    const durationContainer = document.getElementById('event-duration-container');
+
+    choiceRadios.forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            const val = e.target.value;
+            if (val === 'duration') {
+                if (durationContainer) durationContainer.style.display = 'block';
+                if (endDateGroup) endDateGroup.style.display = 'none';
+                if (endTimeGroup) endTimeGroup.style.display = 'none';
+            } else {
+                if (durationContainer) durationContainer.style.display = 'none';
+                if (endDateGroup) endDateGroup.style.display = 'block';
+                if (endTimeGroup) endTimeGroup.style.display = 'block';
+            }
+        });
     });
 
     initFormSubmit(modal);
@@ -1282,7 +1658,27 @@ function openModalUI(type) {
         startDateRow.style.display = 'flex';
         taskDetailsRow.style.display = 'flex'; 
         deadlineContainer.style.display = 'none';
-        eventOnlyElements.forEach(el => el.style.display = 'block');
+        
+        // Show choice radio header first
+        const choiceContainer = document.getElementById('event-end-choice-container');
+        if (choiceContainer) choiceContainer.style.display = 'block';
+        
+        // Refresh visibility of choice sub-containers
+        const currentChoice = document.querySelector('input[name="event-end-choice"]:checked').value;
+        const endDateGroup = document.getElementById('event-end-date-group');
+        const endTimeGroup = document.getElementById('event-end-time-group');
+        const durationContainer = document.getElementById('event-duration-container');
+        
+        if (currentChoice === 'duration') {
+            if (durationContainer) durationContainer.style.display = 'block';
+            if (endDateGroup) endDateGroup.style.display = 'none';
+            if (endTimeGroup) endTimeGroup.style.display = 'none';
+        } else {
+            if (durationContainer) durationContainer.style.display = 'none';
+            if (endDateGroup) endDateGroup.style.display = 'block';
+            if (endTimeGroup) endTimeGroup.style.display = 'block';
+        }
+        
         taskOnlyElements.forEach(el => el.style.display = 'none');
         
         if(!document.getElementById('event-end-date').value) {
@@ -1407,6 +1803,14 @@ function initFormSubmit(modal) {
     form.addEventListener('submit', (e) => {
         e.preventDefault();
 
+        const submitBtn = document.getElementById('submit-btn');
+        if (submitBtn.disabled) return; // Prevent double clicks
+        
+        // Disable submit button immediately to block multiple clicks
+        submitBtn.disabled = true;
+        const originalBtnText = submitBtn.textContent;
+        submitBtn.textContent = 'Saving...';
+
         // Update hidden inputs from custom pickers
         if (window.timePickerStart) {
             document.getElementById('task-start-time').value = window.timePickerStart.getValue();
@@ -1468,19 +1872,62 @@ function initFormSubmit(modal) {
             const dueDate = document.getElementById('task-due-date').value;
             const dueTime = document.getElementById('task-due-time').value;
             if (dueDate && new Date(startDate) > new Date(dueDate)) {
-                showToast('Deadline cannot be before start date!', 'error'); return;
+                showToast('Deadline cannot be before start date!', 'error');
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalBtnText;
+                return;
             }
             dataItem.dueDate = dueDate || null;
             dataItem.dueTime = dueTime || null;
             dataItem.priority = window.customPrioritySelect ? window.customPrioritySelect.getValue() : 'medium';
             dataItem.subtasks = [...tempSubtasks]; 
         } else if (type === 'event') {
-            const endDate = document.getElementById('event-end-date').value;
-            const endTime = document.getElementById('event-end-time').value;
-            const startFull = new Date(`${startDate}T${startTime || '00:00'}`);
-            const endFull = new Date(`${endDate}T${endTime || '00:00'}`);
-            if (startFull > endFull) {
-                showToast('End time cannot be before start time!', 'error'); return;
+            const eventEndChoice = document.querySelector('input[name="event-end-choice"]:checked').value;
+            let endDate = '';
+            let endTime = null;
+
+            if (eventEndChoice === 'duration') {
+                const durationNum = parseInt(document.getElementById('event-duration-num').value) || 60;
+                const durationUnit = document.getElementById('event-duration-unit').value || 'minutes';
+                
+                const startDateTimeStr = `${startDate}T${startTime || '00:00'}`;
+                const startDateTime = new Date(startDateTimeStr);
+                const endDateTime = new Date(startDateTime.getTime());
+                
+                if (durationUnit === 'minutes') {
+                    endDateTime.setMinutes(endDateTime.getMinutes() + durationNum);
+                } else if (durationUnit === 'hours') {
+                    endDateTime.setHours(endDateTime.getHours() + durationNum);
+                } else if (durationUnit === 'days') {
+                    endDateTime.setDate(endDateTime.getDate() + durationNum);
+                } else if (durationUnit === 'weeks') {
+                    endDateTime.setDate(endDateTime.getDate() + (durationNum * 7));
+                } else if (durationUnit === 'months') {
+                    endDateTime.setMonth(endDateTime.getMonth() + durationNum);
+                } else if (durationUnit === 'years') {
+                    endDateTime.setFullYear(endDateTime.getFullYear() + durationNum);
+                }
+                
+                const ey = endDateTime.getFullYear();
+                const em = String(endDateTime.getMonth() + 1).padStart(2, '0');
+                const ed = String(endDateTime.getDate()).padStart(2, '0');
+                endDate = `${ey}-${em}-${ed}`;
+                
+                const eh = String(endDateTime.getHours()).padStart(2, '0');
+                const emin = String(endDateTime.getMinutes()).padStart(2, '0');
+                endTime = `${eh}:${emin}`;
+            } else {
+                endDate = document.getElementById('event-end-date').value;
+                endTime = document.getElementById('event-end-time').value;
+                
+                const startFull = new Date(`${startDate}T${startTime || '00:00'}`);
+                const endFull = new Date(`${endDate}T${endTime || '00:00'}`);
+                if (startFull > endFull) {
+                    showToast('End time cannot be before start time!', 'error');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = originalBtnText;
+                    return;
+                }
             }
             dataItem.endDate = endDate;
             dataItem.endTime = endTime || null;
@@ -1489,8 +1936,30 @@ function initFormSubmit(modal) {
             dataItem.priority = 'medium';
         }
 
+        // Guest mode support
+        if (!currentUser) {
+            if (editId) {
+                dataItem.id = editId;
+            }
+            saveTaskToFirebase(dataItem).then(() => {
+                if (dataItem.id && window.scheduleItemNotifications) {
+                    window.scheduleItemNotifications(dataItem);
+                }
+                finishSubmit(editId ? 'Updated successfully locally!' : 'Saved successfully locally!', false);
+            }).catch(e => {
+                console.error(e);
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalBtnText;
+                showToast('Failed to save locally: ' + e.message, 'error');
+            });
+            return;
+        }
+
+        // Firebase Cloud DB logic
         if (!window.db) {
             showToast('Connecting to the cloud, please wait a moment...', 'info');
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalBtnText;
             return;
         }
 
@@ -1504,14 +1973,32 @@ function initFormSubmit(modal) {
             delete updateData.completedCount;
 
             window.updateDoc(docRef, updateData).then(() => {
+                dataItem.id = editId;
+                if (window.scheduleItemNotifications) {
+                    window.scheduleItemNotifications(dataItem);
+                }
                 finishSubmit('Updated successfully in the cloud!', false);
-            }).catch(e => console.error(e));
+            }).catch(e => {
+                console.error(e);
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalBtnText;
+                showToast('Failed to update task: ' + e.message, 'error');
+            });
         } else {
             // Save new task in Firebase
             dataItem.createdAt = new Date().getTime();
-            window.addDoc(window.collection(window.db, "tasks"), dataItem).then(() => {
+            window.addDoc(window.collection(window.db, "tasks"), dataItem).then((docRef) => {
+                dataItem.id = docRef.id;
+                if (window.scheduleItemNotifications) {
+                    window.scheduleItemNotifications(dataItem);
+                }
                 finishSubmit('Saved successfully in Firebase!', false);
-            }).catch(e => console.error(e));
+            }).catch(e => {
+                console.error(e);
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalBtnText;
+                showToast('Failed to save task: ' + e.message, 'error');
+            });
         }
 
         function finishSubmit(msg, playAudioFlag) {
@@ -1521,6 +2008,10 @@ function initFormSubmit(modal) {
             showToast(msg, 'success', playAudioFlag);
             displayTasks();
             if(window.calendarInstance) window.calendarInstance.refetchEvents();
+            
+            // Re-enable button
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Save Details';
         }
     });
 }
@@ -1593,6 +2084,13 @@ function displayTasks() {
         // Store active tasks globally for live ticking
         window.activeTasksList = tasks.filter(t => !t.isCompleted && !t.isCancelled).sort((a, b) => b.createdAt - a.createdAt);
         window.allActiveItemsList = items.filter(t => !t.isCompleted && !t.isCancelled && !t.isDeleted);
+        
+        // Sync local notification schedules on mobile WebView wrapper devices
+        if (window.scheduleItemNotifications) {
+            window.allActiveItemsList.forEach(item => {
+                window.scheduleItemNotifications(item);
+            });
+        }
         
         const activeHabits = habits.filter(t => !t.isCompleted).sort((a, b) => b.createdAt - a.createdAt);
         const historyItems = items.filter(t => (t.isCompleted || t.isCancelled || t.isDeleted) && t.type !== 'habit').sort((a, b) => b.createdAt - a.createdAt);
@@ -1922,6 +2420,9 @@ window.cancelItem = function(id) {
                 item.isCancelled = true;
                 item.isCompleted = false; 
                 saveTaskToFirebase(item).then(() => {
+                    if (window.scheduleItemNotifications) {
+                        window.scheduleItemNotifications(item);
+                    }
                     showToast('Task marked as Won\'t Do', 'info', false);
                     displayTasks();
                     if(window.calendarInstance) window.calendarInstance.refetchEvents();
@@ -1940,6 +2441,9 @@ window.restoreItem = function(id) {
             item.isDeleted = false;
             item.completedCount = 0;
             saveTaskToFirebase(item).then(() => {
+                if (window.scheduleItemNotifications) {
+                    window.scheduleItemNotifications(item);
+                }
                 showToast('Task restored!', 'info', false);
                 displayTasks();
                 if(window.calendarInstance) window.calendarInstance.refetchEvents();
@@ -1967,6 +2471,9 @@ window.deleteItem = function(id) {
                 item.isCompleted = false;
                 item.isCancelled = false;
                 saveTaskToFirebase(item).then(() => {
+                    if (window.scheduleItemNotifications) {
+                        window.scheduleItemNotifications(item);
+                    }
                     showToast('Task moved to history', 'success', false);
                     displayTasks();
                     if(window.calendarInstance) window.calendarInstance.refetchEvents();
@@ -1996,6 +2503,9 @@ window.toggleItemComplete = function(id, currentStatus) {
             item.completedCount = 0;
         }
         saveTaskToFirebase(item).then(() => {
+            if (window.scheduleItemNotifications) {
+                window.scheduleItemNotifications(item);
+            }
             displayTasks();
             if(window.calendarInstance) window.calendarInstance.refetchEvents();
             
@@ -2307,6 +2817,7 @@ function initCalendar() {
                 const allEvents = [];
                 items.forEach(item => {
                     if (item.userId !== currentUserId) return; 
+                    if (item.isDeleted || item.isCancelled) return; // Skip deleted and won't do tasks/events in calendar
 
                     const isTask = (item.type === 'task' || !item.type);
                     const isEvent = (item.type === 'event');
@@ -2518,39 +3029,86 @@ function initPomodoroDrag() {
     window.addEventListener('touchmove', handleDrag, {passive: false});
     window.addEventListener('touchend', () => { isDragging = false; });
 
+    function syncTimerWithTimePassed() {
+        if (!isRunning) return;
+        const expectedEnd = localStorage.getItem('pomodoro_expected_end');
+        if (expectedEnd) {
+            const remainingMs = parseInt(expectedEnd) - Date.now();
+            timeLeft = Math.max(0, Math.ceil(remainingMs / 1000));
+            updateTimeDisplay();
+            if (timeLeft <= 0) {
+                playSound('pomodoro');
+                if (isWorkSession) {
+                    isWorkSession = false;
+                    statusText.innerHTML = '<i class="fa-solid fa-mug-hot"></i> Break';
+                    progressPath.style.stroke = '#73D13D';
+                    showToast('Focus finished! Break started.', 'info');
+                    timeLeft = Math.round(sessionMinutes / 5) * 60;
+                    const nextEnd = Date.now() + (timeLeft * 1000);
+                    localStorage.setItem('pomodoro_expected_end', nextEnd);
+                    if (window.scheduleMobileNotification) {
+                        window.scheduleMobileNotification(
+                            999999,
+                            'Break Time Finished!',
+                            'Break over! Ready to focus on the next task?',
+                            nextEnd
+                        );
+                    }
+                    updateTimeDisplay();
+                } else {
+                    clearInterval(timerInterval);
+                    isRunning = false;
+                    isWorkSession = true;
+                    statusText.innerHTML = '<i class="fa-solid fa-bullseye"></i> Focus';
+                    progressPath.style.stroke = 'var(--color-ticktick-blue)';
+                    btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Start';
+                    knob.style.display = 'block';
+                    showToast('Break over! Ready to focus?', 'info');
+                    localStorage.removeItem('pomodoro_expected_end');
+                    if (window.cancelMobileNotification) {
+                        window.cancelMobileNotification(999999);
+                    }
+                    updateKnobByMinutes(sessionMinutes);
+                }
+            }
+        }
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            syncTimerWithTimePassed();
+        }
+    });
+
+    window.addEventListener('focus', syncTimerWithTimePassed);
+
     btnStart.addEventListener('click', () => {
         if (isRunning) {
             clearInterval(timerInterval);
             isRunning = false;
             btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Resume';
+            localStorage.removeItem('pomodoro_expected_end');
+            if (window.cancelMobileNotification) {
+                window.cancelMobileNotification(999999);
+            }
         } else {
             isRunning = true;
             btnStart.innerHTML = '<i class="fa-solid fa-pause"></i> Pause';
             knob.style.display = 'none'; 
+            
+            const expectedEnd = Date.now() + (timeLeft * 1000);
+            localStorage.setItem('pomodoro_expected_end', expectedEnd);
+            if (window.scheduleMobileNotification) {
+                window.scheduleMobileNotification(
+                    999999,
+                    isWorkSession ? 'Focus Session Finished!' : 'Break Time Finished!',
+                    isWorkSession ? 'Great focus! Time for a short break.' : 'Break over! Ready to focus on the next task?',
+                    expectedEnd
+                );
+            }
+
             timerInterval = setInterval(() => {
-                timeLeft--;
-                updateTimeDisplay();
-                if (timeLeft <= 0) {
-                    playSound('pomodoro');
-                    
-                    if (isWorkSession) {
-                        isWorkSession = false;
-                        statusText.innerHTML = '<i class="fa-solid fa-mug-hot"></i> Break';
-                        progressPath.style.stroke = '#73D13D';
-                        showToast('Focus finished! Break started.', 'info');
-                        timeLeft = Math.round(sessionMinutes / 5) * 60;
-                    } else {
-                        clearInterval(timerInterval);
-                        isRunning = false;
-                        isWorkSession = true;
-                        statusText.innerHTML = '<i class="fa-solid fa-bullseye"></i> Focus';
-                        progressPath.style.stroke = 'var(--color-ticktick-blue)';
-                        btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Start';
-                        knob.style.display = 'block';
-                        showToast('Break over! Ready to focus?', 'info');
-                        updateKnobByMinutes(sessionMinutes);
-                    }
-                }
+                syncTimerWithTimePassed();
             }, 1000);
         }
     });
@@ -2563,6 +3121,10 @@ function initPomodoroDrag() {
         statusText.innerHTML = '<i class="fa-solid fa-bullseye"></i> Focus';
         progressPath.style.stroke = 'var(--color-ticktick-blue)';
         btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Start';
+        localStorage.removeItem('pomodoro_expected_end');
+        if (window.cancelMobileNotification) {
+            window.cancelMobileNotification(999999);
+        }
         updateKnobByMinutes(25);
     });
 

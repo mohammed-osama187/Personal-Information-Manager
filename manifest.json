@@ -1,6 +1,6 @@
 {
     "name": "Smart Productivity Manager",
-    "short_name": "Productivity",
+    "short_name": "FlowTick",
     "start_url": "./index.html",
     "display": "standalone",
     "background_color": "#F7F7F5",
@@ -8,7 +8,7 @@
     "orientation": "portrait-primary",
     "icons": [
         {
-            "src": "https://cdn-icons-png.flaticon.com/512/2091/2091665.png",
+            "src": "logo.png",
             "sizes": "512x512",
             "type": "image/png",
             "purpose": "any maskable"

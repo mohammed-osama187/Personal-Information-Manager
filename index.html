@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Productivity</title>
+    <title>FlowTick</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -12,6 +12,8 @@
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
     <link rel="stylesheet" href="css/style.css">
     <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="logo1.png">
+
 </head>
 
 <body>
@@ -29,7 +31,11 @@
                 </div>
                 <div class="form-group">
                     <label>Password</label>
-                    <input type="password" id="login-password" placeholder="Enter your password" required>
+                    <div class="password-field-wrapper">
+                        <input type="password" id="login-password" placeholder="Enter your password" required>
+                        <i class="fa-solid fa-eye-slash toggle-password-icon"
+                            onclick="togglePasswordVisibility('login-password', this)"></i>
+                    </div>
                 </div>
                 <div style="text-align: right; margin-top: -10px; margin-bottom: 16px;">
                     <a href="#" id="forgot-password-link"
@@ -39,6 +45,11 @@
                 <button type="submit" class="btn btn-primary btn-block">Log In</button>
                 <div class="auth-toggle">
                     Don't have an account? <span onclick="toggleAuth('signup')">Sign Up</span>
+                </div>
+                <div style="text-align: center; margin-top: 16px;">
+                    <a href="#" class="continue-guest-btn" onclick="closeAuthScreen(event)"
+                        style="font-size: 13px; color: var(--text-muted); text-decoration: none; font-weight: 500;">Continue
+                        as Guest</a>
                 </div>
             </form>
 
@@ -57,15 +68,29 @@
                 </div>
                 <div class="form-group">
                     <label>Password</label>
-                    <input type="password" id="signup-password" placeholder="Create a password" required>
+                    <div class="password-field-wrapper">
+                        <input type="password" id="signup-password" placeholder="Create a password" required>
+                        <i class="fa-solid fa-eye-slash toggle-password-icon"
+                            onclick="togglePasswordVisibility('signup-password', this)"></i>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Confirm Password</label>
-                    <input type="password" id="signup-confirm-password" placeholder="Confirm your password" required>
+                    <div class="password-field-wrapper">
+                        <input type="password" id="signup-confirm-password" placeholder="Confirm your password"
+                            required>
+                        <i class="fa-solid fa-eye-slash toggle-password-icon"
+                            onclick="togglePasswordVisibility('signup-confirm-password', this)"></i>
+                    </div>
                 </div>
                 <button type="submit" class="btn btn-primary btn-block">Sign Up</button>
                 <div class="auth-toggle">
                     Already have an account? <span onclick="toggleAuth('login')">Log In</span>
+                </div>
+                <div style="text-align: center; margin-top: 16px;">
+                    <a href="#" class="continue-guest-btn" onclick="closeAuthScreen(event)"
+                        style="font-size: 13px; color: var(--text-muted); text-decoration: none; font-weight: 500;">Continue
+                        as Guest</a>
                 </div>
             </form>
         </div>
@@ -77,9 +102,15 @@
 
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-top">
-                <div class="user-profile">
-                    <div class="avatar"><i class="fa-solid fa-user"></i></div>
-                    <span class="username" id="display-username">My Profile</span>
+                <div class="user-profile" style="display: flex; align-items: center; width: 100%; gap: 10px;">
+                    <div class="avatar" style="flex-shrink: 0;"><i class="fa-solid fa-user"></i></div>
+                    <span class="username" id="display-username"
+                        style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; font-weight: 600;">My
+                        Profile</span>
+                    <i class="fa-solid fa-right-from-bracket" id="logout-btn" title="Log Out"
+                        style="cursor: pointer; color: #FF4D4F; margin-left: auto; font-size: 18px; padding: 4px; display: block;"></i>
+                    <i class="fa-solid fa-right-to-bracket" id="login-sidebar-btn" title="Log In / Sign Up"
+                        style="cursor: pointer; color: var(--color-ticktick-blue); margin-left: auto; font-size: 18px; padding: 4px; display: none;"></i>
                 </div>
                 <nav class="menu">
                     <button class="menu-item active" data-target="tasks-page"><i class="fa-solid fa-list-check"></i>
@@ -95,11 +126,6 @@
                     <button class="menu-item" data-target="settings-page"><i class="fa-solid fa-gear"></i>
                         Settings</button>
                 </nav>
-            </div>
-            <div class="sidebar-bottom">
-                <button id="logout-btn" class="btn btn-secondary btn-block"
-                    style="color: #FF4D4F; border-color: #FF4D4F33; background: #FF4D4F11;"><i
-                        class="fa-solid fa-right-from-bracket"></i> Log Out</button>
             </div>
         </aside>
 
@@ -129,8 +155,17 @@
                         <h1 id="dashboard-title">My Dashboard</h1>
                         <p>Track your upcoming, current, and overdue tasks live.</p>
                     </div>
-                    <button class="btn btn-primary open-modal-btn" data-type="task"><i class="fa-solid fa-plus"></i> Add
-                        Task</button>
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <div class="view-toggle-container"
+                            style="display: flex; background: var(--item-bg); border: 1px solid var(--border-color); border-radius: 30px; padding: 4px;">
+                            <button id="view-list-btn" class="btn-toggle active" title="Standard List"><i
+                                    class="fa-solid fa-list"></i></button>
+                            <button id="view-kanban-btn" class="btn-toggle" title="Kanban Board"><i
+                                    class="fa-solid fa-columns"></i></button>
+                        </div>
+                        <button class="btn btn-primary open-modal-btn" data-type="task"><i class="fa-solid fa-plus"></i>
+                            Add Task</button>
+                    </div>
                 </header>
 
                 <div id="dashboard-view-container">
@@ -323,11 +358,19 @@
                         <div class="form-row">
                             <div class="form-group">
                                 <label>Current Password</label>
-                                <input type="password" id="current-password" required>
+                                <div class="password-field-wrapper">
+                                    <input type="password" id="current-password" required>
+                                    <i class="fa-solid fa-eye-slash toggle-password-icon"
+                                        onclick="togglePasswordVisibility('current-password', this)"></i>
+                                </div>
                             </div>
                             <div class="form-group">
                                 <label>New Password</label>
-                                <input type="password" id="new-password" required>
+                                <div class="password-field-wrapper">
+                                    <input type="password" id="new-password" required>
+                                    <i class="fa-solid fa-eye-slash toggle-password-icon"
+                                        onclick="togglePasswordVisibility('new-password', this)"></i>
+                                </div>
                             </div>
                         </div>
                         <button type="submit" class="btn btn-secondary">Update Password</button>
@@ -411,6 +454,23 @@
                     </div>
                 </div>
 
+                <div class="form-row id-event-only" id="event-end-choice-container"
+                    style="display:none; margin-bottom: 16px; width: 100%;">
+                    <div class="form-group" style="margin-bottom: 0; width: 100%;">
+                        <label>Specify End By</label>
+                        <div class="event-choice-radio-group">
+                            <label class="event-choice-radio-label">
+                                <input type="radio" name="event-end-choice" value="date" checked>
+                                <span>End Date & Time</span>
+                            </label>
+                            <label class="event-choice-radio-label">
+                                <input type="radio" name="event-end-choice" value="duration">
+                                <span>Duration</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
                 <div id="dynamic-row" class="form-row">
                     <div class="form-group id-task-only" id="deadline-container" style="flex: 1.2;">
                         <label>Deadline (Optional)</label>
@@ -441,11 +501,11 @@
                         </div>
                         <input type="hidden" id="task-due-time">
                     </div>
-                    <div class="form-group id-event-only" style="display:none;">
+                    <div class="form-group id-event-only" id="event-end-date-group" style="display:none;">
                         <label>End Date</label>
                         <input type="date" id="event-end-date">
                     </div>
-                    <div class="form-group id-event-only" style="display:none;">
+                    <div class="form-group id-event-only" id="event-end-time-group" style="display:none;">
                         <label>End Time</label>
                         <div class="custom-time-picker" id="time-picker-end">
                             <div class="custom-select-wrapper time-hour-wrapper open-upward">
@@ -469,6 +529,30 @@
                             </div>
                         </div>
                         <input type="hidden" id="event-end-time">
+                    </div>
+                    <div class="form-group id-event-only" id="event-duration-container"
+                        style="display:none; width: 100%;">
+                        <label>Duration</label>
+                        <div style="display: flex; gap: 12px; width: 100%;">
+                            <input type="number" id="event-duration-num" min="1" value="60"
+                                style="flex: 1.5; border-radius: 30px; padding: 8px 16px;">
+                            <div class="custom-select-wrapper open-upward" id="event-duration-unit-wrapper"
+                                style="flex: 1;">
+                                <div class="custom-select-display" id="event-duration-unit-display"
+                                    style="padding-top: 9px; padding-bottom: 9px;">
+                                    Minutes <i class="fa-solid fa-chevron-down caret-icon"></i>
+                                </div>
+                                <div class="custom-select-options" id="event-duration-unit-options">
+                                    <div class="custom-select-option" data-value="minutes">Minutes</div>
+                                    <div class="custom-select-option" data-value="hours">Hours</div>
+                                    <div class="custom-select-option" data-value="days">Days</div>
+                                    <div class="custom-select-option" data-value="weeks">Weeks</div>
+                                    <div class="custom-select-option" data-value="months">Months</div>
+                                    <div class="custom-select-option" data-value="years">Years</div>
+                                </div>
+                                <input type="hidden" id="event-duration-unit" value="minutes">
+                            </div>
+                        </div>
                     </div>
                 </div>
 

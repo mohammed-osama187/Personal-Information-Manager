@@ -639,6 +639,17 @@ document.addEventListener('DOMContentLoaded', () => {
     initMissedNotificationsUI(); 
     requestBatteryOptimization(); 
 
+    // Handle any notifications clicked during cold launch
+    if (window.pendingNotificationId) {
+        const notifId = window.pendingNotificationId;
+        delete window.pendingNotificationId;
+        setTimeout(() => {
+            if (window.handleNotificationAction) {
+                window.handleNotificationAction(notifId);
+            }
+        }, 800);
+    }
+
     // Live Dynamic Dashboard Categorizer ticker running every 1 minute for premium resource efficiency
     setInterval(() => {
         if (window.sortAndRenderDashboard && window.checkIfDashboardNeedsUpdate && window.checkIfDashboardNeedsUpdate()) {
@@ -735,16 +746,14 @@ function initOfflineNotifications() {
         Notification.requestPermission();
     }
 
-    // Checking every 1 second for absolute real-time reminders and notifications
+    // Checking every 1 second using pre-calculated numeric timestamps (highly efficient!)
     setInterval(() => {
+        const nowMs = Date.now();
         const now = new Date();
         const year = now.getFullYear();
         const month = String(now.getMonth() + 1).padStart(2, '0');
         const day = String(now.getDate()).padStart(2, '0');
         const currentDate = `${year}-${month}-${day}`;
-        const currentHour = String(now.getHours()).padStart(2, '0');
-        const currentMinute = String(now.getMinutes()).padStart(2, '0');
-        const currentTime = `${currentHour}:${currentMinute}`;
         const currentDayOfWeek = now.getDay(); // 0 (Sun) - 6 (Sat)
 
         const currentUser = JSON.parse(localStorage.getItem('currentUser'));
@@ -757,12 +766,8 @@ function initOfflineNotifications() {
         );
         
         items.forEach(item => {
-            // 1. Check if the task is overdue (if due date/time has passed and we haven't notified the user yet)
-            let dueInstant = null;
-            if (item.dueDate) {
-                dueInstant = parseLocalISOString(item.dueDate, item.dueTime || '23:59');
-            }
-            if (dueInstant && dueInstant < now && !item.lastNotifiedOverdue) {
+            // 1. Check if the task is overdue using pre-calculated dueTimeMs
+            if (item.dueTimeMs && nowMs >= item.dueTimeMs && !item.lastNotifiedOverdue) {
                 item.lastNotifiedOverdue = true;
                 saveTaskToFirebase(item).then(() => {
                     displayTasks();
@@ -779,51 +784,42 @@ function initOfflineNotifications() {
                 addMissedNotification(`Overdue: ${item.title}`, item.dueTime || '23:59', 'overdue');
             }
 
-            // 2. Regular startTime schedule reminders check
+            // 2. Regular startTime schedule reminders check using pre-calculated triggerTimeMs
             if (item.lastNotifiedDate === currentDate) return; // Already notified today
             
-            let isTimeOrPassed = false;
-            if (item.startTime) {
-                const [itemH, itemM] = item.startTime.split(':').map(Number);
-                const itemMinutes = itemH * 60 + itemM;
-                const currentMinutes = now.getHours() * 60 + now.getMinutes();
-                if (currentMinutes >= itemMinutes) {
-                    isTimeOrPassed = true;
-                }
-            }
-            if (!isTimeOrPassed) return;
+            if (item.triggerTimeMs && nowMs >= item.triggerTimeMs) {
+                let shouldNotify = false;
 
-            let shouldNotify = false;
-
-            if (item.type === 'task') {
-                if (item.startDate === currentDate) shouldNotify = true;
-                // Check repeats
-                else if (item.frequency === 'daily') shouldNotify = true;
-                else if (item.frequency === 'specific_days' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
-            } else if (item.type === 'habit') {
-                if (item.frequency === 'daily') shouldNotify = true;
-                else if (item.frequency === 'specific_days' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
-            }
-
-            if (shouldNotify) {
-                // Write to Firestore instantly to prevent duplicate reminders in subsequent checks
-                item.lastNotifiedDate = currentDate;
-                saveTaskToFirebase(item).then(() => {
-                    displayTasks();
-                });
-
-                // Only trigger web notifications/sounds if we are NOT on a Capacitor wrapper (which has native OS local scheduling!)
-                if (!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications)) {
-                    showToast(`Reminder: ${item.title}`, 'info', true);
-                    playSound('success');
-                    fireWebNotification("Task Reminder", `It's time for: ${item.title}`);
+                if (item.type === 'task') {
+                    if (item.startDate === currentDate) shouldNotify = true;
+                    // Check repeats
+                    else if (item.frequency === 'daily') shouldNotify = true;
+                    else if (item.frequency === 'specific_days' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
+                } else if (item.type === 'habit') {
+                    if (item.frequency === 'daily') shouldNotify = true;
+                    else if (item.frequency === 'specific_days' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
                 }
 
-                // Add to missed notifications queue (in-app notifications panel)
-                addMissedNotification(item.title, item.startTime, 'reminder');
+                if (shouldNotify) {
+                    // Write to Firestore instantly to prevent duplicate reminders in subsequent checks
+                    item.lastNotifiedDate = currentDate;
+                    saveTaskToFirebase(item).then(() => {
+                        displayTasks();
+                    });
+
+                    // Only trigger web notifications/sounds if we are NOT on a Capacitor wrapper (which has native OS local scheduling!)
+                    if (!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications)) {
+                        showToast(`Reminder: ${item.title}`, 'info', true);
+                        playSound('success');
+                        fireWebNotification("Task Reminder", `It's time for: ${item.title}`);
+                    }
+
+                    // Add to missed notifications queue (in-app notifications panel)
+                    addMissedNotification(item.title, item.startTime, 'reminder');
+                }
             }
         });
-    }, 60000); // 1 minute
+    }, 1000); // Check every 1 second with 0 overhead!
 }
 
 // ==========================================
@@ -1139,12 +1135,20 @@ window.cancelMobileNotification = function(id) {
                 }
             });
         }
+        window.handleNotificationAction = handleNotificationAction;
 
         // Listener for click actions
         window.Capacitor.Plugins.LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
             console.log('[NativeBridge] Notification clicked:', action);
             if (action && action.notification && action.notification.id) {
-                handleNotificationAction(action.notification.id);
+                const notifId = action.notification.id;
+                if (document.readyState === 'loading') {
+                    window.pendingNotificationId = notifId;
+                } else {
+                    setTimeout(() => {
+                        handleNotificationAction(notifId);
+                    }, 400);
+                }
             }
         });
     }
@@ -2247,6 +2251,23 @@ function displayTasks() {
         // Store active tasks globally for live ticking
         window.activeTasksList = tasks.filter(t => !t.isCompleted && !t.isCancelled).sort((a, b) => b.createdAt - a.createdAt);
         window.allActiveItemsList = items.filter(t => !t.isCompleted && !t.isCancelled && !t.isDeleted);
+        
+        // Pre-calculate trigger timestamps once to keep the 1-second checker loop extremely fast and prevent GC spikes
+        window.allActiveItemsList.forEach(item => {
+            if (item.startDate && item.startTime) {
+                const trig = parseLocalISOString(item.startDate, item.startTime);
+                item.triggerTimeMs = trig ? trig.getTime() : null;
+            } else {
+                item.triggerTimeMs = null;
+            }
+
+            if (item.dueDate && item.dueTime) {
+                const dueTrig = parseLocalISOString(item.dueDate, item.dueTime);
+                item.dueTimeMs = dueTrig ? dueTrig.getTime() : null;
+            } else {
+                item.dueTimeMs = null;
+            }
+        });
         
         // Sync local notification schedules on mobile WebView wrapper devices
         if (window.scheduleItemNotifications) {

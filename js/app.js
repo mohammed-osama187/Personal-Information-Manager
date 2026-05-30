@@ -24,11 +24,11 @@ if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Loc
         visibility: 1
     });
 
-    // Silent channel for the live countdown ticker (no sound)
+    // HIGH-importance channel for the live countdown ticker (no sound, but keeps process alive)
     _ln.createChannel({
-        id: 'flowtick-silent-ticks',
-        name: 'FlowTick Active Timer',
-        importance: 2,
+        id: 'flowtick-timer-live',
+        name: 'FlowTick Live Timer',
+        importance: 4,   // HIGH — promotes app to foreground-service priority
         visibility: 1
     });
 }
@@ -381,7 +381,7 @@ function initCustomSelect(wrapperId, onChangeCallback) {
 // ==========================================
 // Custom 12h Time Picker component helper
 // ==========================================
-function initCustomTimePicker(id, isOptional = true) {
+function initCustomTimePicker(id, isOptional = true, onChange = null) {
     const container = document.getElementById(id);
     if (!container) return null;
     
@@ -505,6 +505,9 @@ function initCustomTimePicker(id, isOptional = true) {
                         ampmDisplay.innerHTML = `AM <i class="fa-solid fa-chevron-down caret-icon"></i>`;
                     }
                 }
+            }
+            if (onChange) {
+                onChange();
             }
         });
     });
@@ -632,9 +635,130 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize duration unit selection dropdown
     window.customEventDurationUnitSelect = initCustomSelect('event-duration-unit-wrapper');
 
-    window.timePickerStart = initCustomTimePicker('time-picker-start', true);
+    // Initialize task list controls
+    window.currentTaskFilter = 'all';
+    window.currentTaskSort = 'default';
+    
+    const filterBtns = document.querySelectorAll('.btn-filter');
+    filterBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            filterBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const targetFilter = btn.getAttribute('data-filter');
+            window.currentTaskFilter = targetFilter;
+            
+            // Sync mobile dropdown select display
+            if (window.customTaskFilterSelect) {
+                const labelMap = {
+                    all: 'All Tasks',
+                    today: 'Today',
+                    tomorrow: 'Tomorrow',
+                    week: 'This Week',
+                    month: 'This Month',
+                    year: 'This Year'
+                };
+                window.customTaskFilterSelect.setValue(targetFilter, labelMap[targetFilter] || 'All Tasks');
+            }
+
+            if (typeof window.sortAndRenderDashboard === 'function') {
+                window.sortAndRenderDashboard();
+            }
+        });
+    });
+
+    window.customTaskFilterSelect = initCustomSelect('task-filter-wrapper', (val) => {
+        window.currentTaskFilter = val || 'all';
+        
+        // Sync desktop filter buttons state
+        const correspondingBtn = document.querySelector(`.btn-filter[data-filter="${window.currentTaskFilter}"]`);
+        if (correspondingBtn) {
+            filterBtns.forEach(b => b.classList.remove('active'));
+            correspondingBtn.classList.add('active');
+        }
+
+        if (typeof window.sortAndRenderDashboard === 'function') {
+            window.sortAndRenderDashboard();
+        }
+    });
+
+    window.customTaskSortSelect = initCustomSelect('task-sort-wrapper', (val) => {
+        window.currentTaskSort = val || 'default';
+        if (typeof window.sortAndRenderDashboard === 'function') {
+            window.sortAndRenderDashboard();
+        }
+    });
+
+    // Fix 2: Live validation - deadline date & time >= start date & time
+    const startDateInput = document.getElementById('task-start-date');
+    const dueDateInput = document.getElementById('task-due-date');
+    
+    function validateDates() {
+        if (!startDateInput || !dueDateInput) return;
+        const startDateVal = startDateInput.value;
+        const dueDateVal = dueDateInput.value;
+        
+        // Remove existing error message if any
+        const existingError = dueDateInput.parentElement.querySelector('.live-date-error');
+        if (existingError) {
+            existingError.remove();
+        }
+        dueDateInput.style.border = '';
+        dueDateInput.style.boxShadow = '';
+        
+        if (startDateVal && dueDateVal) {
+            const startTimeVal = window.timePickerStart ? window.timePickerStart.getValue() : '';
+            const dueTimeVal = window.timePickerDue ? window.timePickerDue.getValue() : '';
+            
+            const startDateTime = new Date(`${startDateVal}T${startTimeVal || '00:00'}`);
+            const dueDateTime = new Date(`${dueDateVal}T${dueTimeVal || '23:59'}`);
+            
+            if (dueDateTime < startDateTime) {
+                // Show red border & shadow
+                dueDateInput.style.border = '2px solid #FF4D4F';
+                dueDateInput.style.boxShadow = '0 0 8px rgba(255, 77, 79, 0.2)';
+                
+                const errMsg = document.createElement('div');
+                errMsg.className = 'live-date-error';
+                errMsg.style.color = '#FF4D4F';
+                errMsg.style.fontSize = '12px';
+                errMsg.style.marginTop = '6px';
+                errMsg.style.fontWeight = '500';
+                errMsg.style.display = 'flex';
+                errMsg.style.alignItems = 'center';
+                errMsg.style.gap = '4px';
+                errMsg.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> Deadline can\'t be before start time';
+                dueDateInput.parentElement.appendChild(errMsg);
+                
+                // Add a small shake/flash animation
+                dueDateInput.style.backgroundColor = 'rgba(255, 77, 79, 0.08)';
+                setTimeout(() => {
+                    dueDateInput.style.backgroundColor = '';
+                }, 800);
+            }
+        }
+    }
+
+    window.timePickerStart = initCustomTimePicker('time-picker-start', true, () => {
+        validateDates();
+    });
     window.timePickerEnd = initCustomTimePicker('time-picker-end', true);
-    window.timePickerDue = initCustomTimePicker('time-picker-due', true);
+    
+    // Fix 1: Auto-set deadline date to "today" when a due time is picked
+    window.timePickerDue = initCustomTimePicker('time-picker-due', true, () => {
+        if (dueDateInput && !dueDateInput.value && window.timePickerDue.getValue()) {
+            const d = new Date();
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            dueDateInput.value = `${year}-${month}-${day}`;
+        }
+        validateDates();
+    });
+
+    if (startDateInput && dueDateInput) {
+        startDateInput.addEventListener('change', validateDates);
+        dueDateInput.addEventListener('change', validateDates);
+    }
 
     initPomodoroDrag();
     initModalLogic();
@@ -697,10 +821,10 @@ async function requestBatteryOptimization() {
         const prompted = localStorage.getItem('battery_prompted');
         if (!prompted) {
             localStorage.setItem('battery_prompted', 'true');
-            // This will open the specific system settings page for your app
-            // so the user can manually select "Unrestricted"
-            // await window.Capacitor.Plugins.App.exitApp(); // Optional: Redirect or prompt
-            window.location.href = "intent://#Intent;action=android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS;end";
+            // Target the exact package so Android opens THIS app's battery page directly.
+            // The user must tap "Unrestricted" — without it Android may batch alarms.
+            const pkg = 'com.flowtick.app'; // <-- your app's package name from capacitor.config.json
+            window.location.href = `intent://#Intent;action=android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS;package=${pkg};end`;
         }
     }
 }
@@ -1092,8 +1216,8 @@ window.scheduleMobileNotification = function(id, title, body, triggerTime, frequ
                     schedule: scheduleOpts,
                     sound: sound,
                     channelId: channelId,
-                    ongoing: true,        // Keeps the notification in the tray until the user acts
-                    autoCancel: false,    // Android does not remove it on tap — user must dismiss it
+                    ongoing: false,       // Users CAN swipe the notification away after reading it
+                    autoCancel: true,     // Tapping the notification dismisses it from the tray
                     foreground: true,     // Forces the notification to appear even if the app is open
                     actionTypeId: '',
                     extra: null
@@ -1108,23 +1232,27 @@ window.scheduleMobileNotification = function(id, title, body, triggerTime, frequ
 window.updateMobileTimerNotification = function(isWork, timeLeft) {
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
         const mins = Math.ceil(timeLeft / 60);
-        // Create a silent, low-priority channel specifically for ticking timer updates
+        const secs = timeLeft % 60;
+        const timeStr = `${mins}:${String(secs).padStart(2, '0')} remaining`;
+        // importance:4 = HIGH — Android treats this like a media/navigation notification.
+        // This tells the OS to keep the app process alive ("Music Player" strategy),
+        // which prevents the WebView from being evicted while the timer is counting.
         window.Capacitor.Plugins.LocalNotifications.createChannel({
-            id: 'flowtick-silent-ticks',
-            name: 'FlowTick Active Timer',
-            importance: 2, // 2 = Low (silent, no sound, no vibration, stays in tray)
+            id: 'flowtick-timer-live',
+            name: 'FlowTick Live Timer',
+            importance: 4,   // HIGH: persistent tray entry, no sound, keeps process alive
             visibility: 1
         }).then(() => {
             window.Capacitor.Plugins.LocalNotifications.schedule({
                 notifications: [{
                     id: 888888,
-                    title: isWork ? 'Focus Session Active' : 'Break Session Active',
-                    body: `${mins} min remaining...`,
+                    title: isWork ? '🍅 Focus Session Active' : '☕ Break Session Active',
+                    body: timeStr,
                     schedule: { at: new Date(Date.now() + 50) },
-                    channelId: 'flowtick-silent-ticks',
-                    ongoing: true,        // Prevents the user from accidentally swiping it away
-                    autoCancel: false,    // Keeps the notification in the tray until cleared
-                    foreground: false      // Silent update
+                    channelId: 'flowtick-timer-live',
+                    ongoing: true,        // Sticky — stays until timer ends or is paused
+                    autoCancel: false,    // OS must not remove it automatically
+                    foreground: true      // Show even when app is in foreground
                 }]
             });
         });
@@ -1209,14 +1337,19 @@ function getStableNumericId(strId) {
                 });
 
                 if (task) {
-                    // 1. Direct the user to the tasks page
+                    // 1. Navigate to the tasks page
                     const menuItem = document.querySelector('.menu-item[data-target="tasks-page"]');
                     if (menuItem) menuItem.click();
 
-                    // 2. Open the edit modal for the task
-                    if (window.editItem) {
-                        window.editItem(task.id);
-                    }
+                    // 2. Open the read-only details modal (which already has Edit / Delete / Complete buttons)
+                    //    Using showItemDetails instead of editItem gives the user context before acting.
+                    setTimeout(() => {
+                        if (window.showItemDetails) {
+                            window.showItemDetails(task.id);
+                        } else if (window.editItem) {
+                            window.editItem(task.id); // fallback
+                        }
+                    }, 300); // small delay to let the tab switch finish rendering
                 }
             });
         }
@@ -1571,6 +1704,9 @@ function initRouter() {
             if(targetPage === 'calendar-page' && window.calendarInstance) {
                 setTimeout(() => window.calendarInstance.updateSize(), 100);
             }
+            if(targetPage === 'stats-page') {
+                renderStatsPage();
+            }
         });
     });
 }
@@ -1812,6 +1948,7 @@ function initModalLogic() {
     openBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             document.getElementById('task-form').reset();
+            if (typeof clearLiveDateErrors === 'function') clearLiveDateErrors();
             document.getElementById('edit-item-id').value = ''; 
             document.getElementById('submit-btn').textContent = 'Save Details';
             modalDelBtn.style.display = 'none'; 
@@ -1988,6 +2125,7 @@ window.editItem = function(id) {
         if(!item) return;
 
         document.getElementById('task-form').reset(); 
+        if (typeof clearLiveDateErrors === 'function') clearLiveDateErrors();
         document.getElementById('edit-item-id').value = item.id;
         document.getElementById('submit-btn').textContent = 'Update Details';
         document.getElementById('modal-delete-btn').style.display = 'block'; 
@@ -2153,11 +2291,15 @@ function initFormSubmit(modal) {
         if (type === 'task') {
             const dueDate = document.getElementById('task-due-date').value;
             const dueTime = document.getElementById('task-due-time').value;
-            if (dueDate && new Date(startDate) > new Date(dueDate)) {
-                showToast('Deadline cannot be before start date!', 'error');
-                submitBtn.disabled = false;
-                submitBtn.textContent = originalBtnText;
-                return;
+            if (dueDate) {
+                const startDateTime = new Date(`${startDate}T${startTime || '00:00'}`);
+                const dueDateTime = new Date(`${dueDate}T${dueTime || '23:59'}`);
+                if (dueDateTime < startDateTime) {
+                    showToast('Deadline cannot be before start time!', 'error');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = originalBtnText;
+                    return;
+                }
             }
             dataItem.dueDate = dueDate || null;
             dataItem.dueTime = dueTime || null;
@@ -2361,6 +2503,88 @@ function formatTaskTimeDisplay(time24) {
     return `${hour}:${mStr} ${ampm}`;
 }
 
+function clearLiveDateErrors() {
+    const dueDateInput = document.getElementById('task-due-date');
+    if (dueDateInput) {
+        dueDateInput.style.border = '';
+        dueDateInput.style.boxShadow = '';
+        const err = dueDateInput.parentElement.querySelector('.live-date-error');
+        if (err) err.remove();
+    }
+}
+
+function isHabitScheduledOnDay(item, dateObj) {
+    if (item.type !== 'habit') return false;
+    const freq = item.frequency;
+    if (freq === 'daily') return true;
+    if (freq === 'custom') {
+        const unit = item.customUnit;
+        if (unit === 'days') {
+            const start = new Date(item.startDate);
+            start.setHours(0,0,0,0);
+            const target = new Date(dateObj);
+            target.setHours(0,0,0,0);
+            const diffTime = target - start;
+            if (diffTime < 0) return false;
+            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+            return (diffDays % (item.customNum || 1)) === 0;
+        }
+        if (unit === 'weeks') {
+            const dayOfWeek = dateObj.getDay();
+            if (item.specificDays && item.specificDays.includes(dayOfWeek)) {
+                const start = new Date(item.startDate);
+                start.setHours(0,0,0,0);
+                const target = new Date(dateObj);
+                target.setHours(0,0,0,0);
+                
+                const startSun = new Date(start);
+                startSun.setDate(start.getDate() - start.getDay());
+                const targetSun = new Date(target);
+                targetSun.setDate(target.getDate() - target.getDay());
+                
+                const diffTime = targetSun - startSun;
+                if (diffTime < 0) return false;
+                const diffWeeks = Math.round(diffTime / (1000 * 60 * 60 * 24 * 7));
+                return (diffWeeks % (item.customNum || 1)) === 0;
+            }
+            return false;
+        }
+        if (unit === 'months') {
+            const start = new Date(item.startDate);
+            const target = new Date(dateObj);
+            if (target < start) return false;
+            if (target.getDate() !== start.getDate()) return false;
+            
+            const diffMonths = (target.getFullYear() - start.getFullYear()) * 12 + (target.getMonth() - start.getMonth());
+            return (diffMonths % (item.customNum || 1)) === 0;
+        }
+    }
+    
+    if (freq === 'weekly') {
+        const start = new Date(item.startDate);
+        return dateObj.getDay() === start.getDay();
+    }
+    if (freq === 'monthly') {
+        const start = new Date(item.startDate);
+        return dateObj.getDate() === start.getDate();
+    }
+    if (freq === 'yearly') {
+        const start = new Date(item.startDate);
+        return dateObj.getDate() === start.getDate() && dateObj.getMonth() === start.getMonth();
+    }
+    
+    return true;
+}
+
+window._habitCalendarOffset = window._habitCalendarOffset || new Map();
+window.shiftHabitCalendar = function(itemId, delta) {
+    const current = window._habitCalendarOffset.get(itemId) || 0;
+    window._habitCalendarOffset.set(itemId, current + delta);
+    if (typeof displayTasks === 'function') {
+        displayTasks();
+    }
+};
+
 function displayTasks() {
     const habitsContainer = document.getElementById('habits-container');
     const historyContainer = document.getElementById('history-tasks');
@@ -2372,6 +2596,7 @@ function displayTasks() {
 
     getTasksFromFirebase().then(allItems => {
         const items = allItems.filter(item => item.userId === currentUserId);
+        window.allUserItemsList = items; // Store globally for stats page
         
         if (habitsContainer) habitsContainer.innerHTML = '';
         if (historyContainer) historyContainer.innerHTML = '';
@@ -2441,7 +2666,11 @@ function displayTasks() {
             }
         });
 
-        // Sync local notification schedules on mobile WebView wrapper devices on launch/reload
+        // Cold-boot schedule refresh:
+        // Every time displayTasks() runs (app launch, tab switch, save, toggle) we
+        // re-register every active item with the OS AlarmManager.  This means even
+        // if the phone was rebooted or Android purged pending alarms to free memory,
+        // the next time the user opens the app all alarms are silently re-registered.
         if (window.scheduleItemNotifications) {
             window.allActiveItemsList.forEach(item => {
                 window.scheduleItemNotifications(item);
@@ -2524,10 +2753,12 @@ function displayTasks() {
             let habitCalendarHTML = '';
             if (item.type === 'habit' && !isHistory) {
                 const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+                const offset = (window._habitCalendarOffset && window._habitCalendarOffset.get(item.id)) || 0;
+                
                 const curDate = new Date();
-                const curYear = curDate.getFullYear();
-                const curMonth = curDate.getMonth();
-                const todayVal = curDate.getDate();
+                const targetDate = new Date(curDate.getFullYear(), curDate.getMonth() + offset, 1);
+                const curYear = targetDate.getFullYear();
+                const curMonth = targetDate.getMonth();
                 const daysInMonth = new Date(curYear, curMonth + 1, 0).getDate();
                 const monthTitle = `${monthNames[curMonth]} ${curYear}`;
                 
@@ -2561,17 +2792,27 @@ function displayTasks() {
                                              
                     const isFuture = (curYear > curDate.getFullYear()) ||
                                      (curYear === curDate.getFullYear() && curMonth > curDate.getMonth()) ||
-                                     (curYear === curDate.getFullYear() && curMonth === curDate.getMonth() && d > todayVal);
+                                     (curYear === curDate.getFullYear() && curMonth === curDate.getMonth() && d > curDate.getDate());
                                      
+                    const dateObj = new Date(curYear, curMonth, d);
+                    const isScheduled = isHabitScheduledOnDay(item, dateObj);
+                    const isToday = curYear === curDate.getFullYear() && curMonth === curDate.getMonth() && d === curDate.getDate();
+
                     if (isBeforeCreation) {
                         dayClass += ' untouched';
                     } else if (isFuture) {
                         dayClass += ' future';
+                        if (isScheduled) {
+                            dayClass += ' scheduled';
+                        }
                     } else {
                         const isChecked = item.completedDates && item.completedDates.includes(dayDateStr);
                         if (isChecked) {
                             dayClass += ' checked';
                             dayContent = '<i class="fa-solid fa-check"></i>';
+                        } else if (isToday && isScheduled) {
+                            dayClass += ' today-scheduled';
+                            dayContent = `${d}`;
                         } else {
                             dayClass += ' unchecked';
                             dayContent = '<i class="fa-solid fa-xmark"></i>';
@@ -2582,11 +2823,20 @@ function displayTasks() {
                     gridHTML += `<div class="${dayClass}" title="${dayDateStr}" ${clickAttr}>${dayContent}</div>`;
                 }
                 
+                const minOffset = (cYear - curDate.getFullYear()) * 12 + (cMonth - curDate.getMonth());
+                const maxOffset = 1;
+                const prevDisabled = offset <= minOffset ? 'disabled style="opacity: 0.3; cursor: not-allowed;"' : '';
+                const nextDisabled = offset >= maxOffset ? 'disabled style="opacity: 0.3; cursor: not-allowed;"' : '';
+
                 habitCalendarHTML = `
                     <div class="habit-calendar-wrapper" onclick="event.stopPropagation();">
-                        <div class="habit-calendar-header">
-                            <span class="habit-calendar-title">${monthTitle}</span>
-                            <div class="habit-calendar-legend">
+                        <div class="habit-calendar-header" style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <button class="habit-nav-btn" onclick="shiftHabitCalendar('${item.id}', -1)" ${prevDisabled} style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; display: flex; align-items: center; justify-content: center;"><i class="fa-solid fa-chevron-left"></i></button>
+                                <span class="habit-calendar-title" style="font-weight: 600; min-width: 100px; text-align: center; color: var(--text-main); font-size: 14px;">${monthTitle}</span>
+                                <button class="habit-nav-btn" onclick="shiftHabitCalendar('${item.id}', 1)" ${nextDisabled} style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; display: flex; align-items: center; justify-content: center;"><i class="fa-solid fa-chevron-right"></i></button>
+                            </div>
+                            <div class="habit-calendar-legend" style="margin-left: auto;">
                                 <div class="legend-item"><span class="legend-dot checked"></span> Done</div>
                                 <div class="legend-item"><span class="legend-dot unchecked"></span> Missed</div>
                             </div>
@@ -2688,7 +2938,7 @@ function displayTasks() {
 
             // Recalculate and update the cached dashboard fingerprint to remain perfectly in sync
             const now = new Date();
-            let fingerprint = "";
+            let fingerprint = `${window.currentTaskFilter || 'all'}:${window.currentTaskSort || 'default'}|`;
             (window.activeTasksList || []).forEach(item => {
                 let startInstant = item.startDate ? parseLocalISOString(item.startDate, item.startTime || '00:00') : now;
                 let dueInstant = item.dueDate ? parseLocalISOString(item.dueDate, item.dueTime || '23:59') : null;
@@ -2710,7 +2960,81 @@ function displayTasks() {
             const currentTasks = [];
             const overdueTasks = [];
 
-            (window.activeTasksList || []).forEach(item => {
+            // Gather active tasks
+            let filteredTasks = [...(window.activeTasksList || [])];
+
+            // Apply filtering
+            const filterVal = window.currentTaskFilter || 'all';
+            if (filterVal !== 'all') {
+                const todayStr = now.toLocaleDateString('sv'); // YYYY-MM-DD
+                
+                const tomorrow = new Date();
+                tomorrow.setDate(now.getDate() + 1);
+                const tomorrowStr = tomorrow.toLocaleDateString('sv');
+                
+                const getWeekBounds = (d) => {
+                    const start = new Date(d);
+                    const day = start.getDay();
+                    const diff = start.getDate() - day + (day === 0 ? -6 : 1);
+                    const monday = new Date(start.setDate(diff));
+                    monday.setHours(0,0,0,0);
+                    
+                    const sunday = new Date(monday);
+                    sunday.setDate(monday.getDate() + 6);
+                    sunday.setHours(23,59,59,999);
+                    return { start: monday, end: sunday };
+                };
+                const weekBounds = getWeekBounds(now);
+
+                filteredTasks = filteredTasks.filter(item => {
+                    const targetDateStr = item.dueDate || item.startDate;
+                    if (!targetDateStr) return false;
+                    
+                    if (filterVal === 'today') {
+                        return targetDateStr === todayStr;
+                    }
+                    if (filterVal === 'tomorrow') {
+                        return targetDateStr === tomorrowStr;
+                    }
+                    if (filterVal === 'week') {
+                        const tDate = new Date(targetDateStr);
+                        tDate.setHours(0,0,0,0);
+                        return tDate >= weekBounds.start && tDate <= weekBounds.end;
+                    }
+                    if (filterVal === 'month') {
+                        const tDate = new Date(targetDateStr);
+                        return tDate.getFullYear() === now.getFullYear() && tDate.getMonth() === now.getMonth();
+                    }
+                    if (filterVal === 'year') {
+                        const tDate = new Date(targetDateStr);
+                        return tDate.getFullYear() === now.getFullYear();
+                    }
+                    return true;
+                });
+            }
+
+            // Apply sorting
+            const sortVal = window.currentTaskSort || 'default';
+            if (sortVal === 'a-z') {
+                filteredTasks.sort((a, b) => a.title.localeCompare(b.title));
+            } else if (sortVal === 'z-a') {
+                filteredTasks.sort((a, b) => b.title.localeCompare(a.title));
+            } else if (sortVal === 'priority') {
+                const priorityWeight = { high: 3, medium: 2, low: 1 };
+                filteredTasks.sort((a, b) => {
+                    const weightA = priorityWeight[a.priority] || 2;
+                    const weightB = priorityWeight[b.priority] || 2;
+                    return weightB - weightA;
+                });
+            } else if (sortVal === 'time') {
+                filteredTasks.sort((a, b) => {
+                    const timeA = new Date(`${a.startDate}T${a.startTime || '00:00'}`).getTime();
+                    const timeB = new Date(`${b.startDate}T${b.startTime || '00:00'}`).getTime();
+                    return timeA - timeB;
+                });
+            }
+
+            filteredTasks.forEach(item => {
                 let startInstant = null;
                 if (item.startDate) {
                     startInstant = parseLocalISOString(item.startDate, item.startTime || '00:00');
@@ -3687,3 +4011,172 @@ function initPomodoroDrag() {
 }
 
 // Notifications are scheduled natively via AlarmManager on save/edit — no polling loop needed.
+
+function renderStatsPage() {
+    const container = document.getElementById('stats-container');
+    if (!container) return;
+
+    const items = window.allUserItemsList || [];
+
+    // Filter by type
+    const tasks = items.filter(i => (i.type === 'task' || !i.type) && !i.isDeleted);
+    const habits = items.filter(i => i.type === 'habit' && !i.isDeleted);
+    const events = items.filter(i => i.type === 'event' && !i.isDeleted);
+
+    // 1. Tasks metrics
+    const totalTasks = tasks.length;
+    const completedTasks = tasks.filter(t => t.isCompleted).length;
+    const activeTasks = tasks.filter(t => !t.isCompleted && !t.isCancelled).length;
+    const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+    // Overdue tasks
+    const nowStr = new Date().toISOString().split('T')[0];
+    const overdueTasks = tasks.filter(t => {
+        if (t.isCompleted || t.isCancelled) return false;
+        if (!t.dueDate) return false;
+        return t.dueDate < nowStr;
+    }).length;
+
+    // Today's tasks / events
+    const todayStr = new Date().toLocaleDateString('sv'); // YYYY-MM-DD
+    const todayTasks = tasks.filter(t => t.startDate === todayStr).length;
+    const todayEvents = events.filter(e => e.startDate === todayStr).length;
+    const todayCount = todayTasks + todayEvents;
+
+    // 2. Focus time
+    const focusMinutes = parseInt(localStorage.getItem('totalFocusMinutes') || '0', 10);
+    const hours = Math.floor(focusMinutes / 60);
+    const mins = focusMinutes % 60;
+    const focusDisplay = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+
+    // 3. Habit Streaks
+    const habitStreaks = habits.map(h => {
+        const completedDates = h.completedDates || [];
+        if (completedDates.length === 0) return { name: h.title, current: 0, longest: 0 };
+
+        const sortedDates = [...new Set(completedDates)].sort();
+        
+        let longest = 0;
+        let tempStreak = 0;
+        let lastDate = null;
+
+        for (let i = 0; i < sortedDates.length; i++) {
+            const cur = new Date(sortedDates[i]);
+            cur.setHours(0,0,0,0);
+            
+            if (lastDate === null) {
+                tempStreak = 1;
+            } else {
+                const diffTime = cur - lastDate;
+                const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+                if (diffDays === 1) {
+                    tempStreak++;
+                } else if (diffDays > 1) {
+                    if (tempStreak > longest) longest = tempStreak;
+                    tempStreak = 1;
+                }
+            }
+            lastDate = cur;
+        }
+        if (tempStreak > longest) longest = tempStreak;
+
+        let currentStreak = 0;
+        if (sortedDates.length > 0) {
+            const latestDateStr = sortedDates[sortedDates.length - 1];
+            const latestDate = new Date(latestDateStr);
+            latestDate.setHours(0,0,0,0);
+            
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            
+            const diffTime = today - latestDate;
+            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffDays === 0 || diffDays === 1) {
+                let count = 0;
+                let checkDate = new Date(latestDate);
+                while (true) {
+                    const checkStr = checkDate.toISOString().split('T')[0];
+                    if (completedDates.includes(checkStr)) {
+                        count++;
+                        checkDate.setDate(checkDate.getDate() - 1);
+                    } else {
+                        break;
+                    }
+                }
+                currentStreak = count;
+            }
+        }
+
+        return {
+            name: h.title,
+            current: currentStreak,
+            longest: longest
+        };
+    });
+
+    habitStreaks.sort((a, b) => b.current - a.current);
+
+    let habitsListHTML = '';
+    if (habitStreaks.length > 0) {
+        habitsListHTML = habitStreaks.map(s => `
+            <div class="stat-habit-row" style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: var(--item-bg); border-radius: 12px; margin-bottom: 8px; border: 1px solid var(--border-color);">
+                <div style="font-weight: 600; color: var(--text-main); display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-fire" style="color: #FFA940;"></i> ${s.name}
+                </div>
+                <div style="display: flex; gap: 16px; font-size: 13.5px;">
+                    <span style="color: var(--text-muted);">Current: <strong style="color: var(--color-ticktick-blue);">${s.current} days</strong></span>
+                    <span style="color: var(--text-muted);">Longest: <strong style="color: #FFA940;">${s.longest} days</strong></span>
+                </div>
+            </div>
+        `).join('');
+    } else {
+        habitsListHTML = `<div style="text-align: center; color: var(--text-muted); padding: 16px;">No habits defined yet. Start tracking to build streaks!</div>`;
+    }
+
+    container.innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;">
+            <div class="card stat-card" style="text-align: center; display: flex; flex-direction: column; justify-content: center; padding: 20px; border-radius: 16px; position: relative; overflow: hidden; background: linear-gradient(135deg, var(--item-bg), var(--bg-notion-sidebar)); border: 1px solid var(--border-color);">
+                <div style="font-size: 28px; color: #52C41A; margin-bottom: 8px;"><i class="fa-solid fa-circle-check"></i></div>
+                <div style="font-size: 24px; font-weight: 700; color: var(--text-main);">${completedTasks}</div>
+                <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Tasks Completed</div>
+            </div>
+
+            <div class="card stat-card" style="text-align: center; display: flex; flex-direction: column; justify-content: center; padding: 20px; border-radius: 16px; position: relative; overflow: hidden; background: linear-gradient(135deg, var(--item-bg), var(--bg-notion-sidebar)); border: 1px solid var(--border-color);">
+                <div style="font-size: 28px; color: #FF4D4F; margin-bottom: 8px;"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div style="font-size: 24px; font-weight: 700; color: var(--text-main);">${overdueTasks}</div>
+                <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Overdue Tasks</div>
+            </div>
+
+            <div class="card stat-card" style="text-align: center; display: flex; flex-direction: column; justify-content: center; padding: 20px; border-radius: 16px; position: relative; overflow: hidden; background: linear-gradient(135deg, var(--item-bg), var(--bg-notion-sidebar)); border: 1px solid var(--border-color);">
+                <div style="font-size: 28px; color: var(--color-ticktick-blue); margin-bottom: 8px;"><i class="fa-regular fa-calendar-check"></i></div>
+                <div style="font-size: 24px; font-weight: 700; color: var(--text-main);">${todayCount}</div>
+                <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Today's Schedule</div>
+            </div>
+
+            <div class="card stat-card" style="text-align: center; display: flex; flex-direction: column; justify-content: center; padding: 20px; border-radius: 16px; position: relative; overflow: hidden; background: linear-gradient(135deg, var(--item-bg), var(--bg-notion-sidebar)); border: 1px solid var(--border-color);">
+                <div style="font-size: 28px; color: #FFA940; margin-bottom: 8px;"><i class="fa-solid fa-stopwatch"></i></div>
+                <div style="font-size: 24px; font-weight: 700; color: var(--text-main);">${focusDisplay}</div>
+                <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">Focus Time</div>
+            </div>
+        </div>
+
+        <div style="display: flex; justify-content: center; gap: 20px; width: 100%;">
+            <div class="card" style="padding: 24px; border-radius: 16px; background: var(--item-bg); border: 1px solid var(--border-color); display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; max-width: 500px;">
+                <h3 style="margin-bottom: 20px; font-size: 16px; font-weight: 600; color: var(--text-main); align-self: flex-start;">Task Completion Rate</h3>
+                <div style="position: relative; width: 140px; height: 140px; display: flex; align-items: center; justify-content: center;">
+                    <svg width="140" height="140" style="transform: rotate(-90deg);">
+                        <circle cx="70" cy="70" r="55" stroke="var(--border-color)" stroke-width="10" fill="transparent" />
+                        <circle cx="70" cy="70" r="55" stroke="var(--color-ticktick-blue)" stroke-width="10" fill="transparent"
+                                stroke-dasharray="345.5" stroke-dashoffset="${345.5 - (345.5 * completionRate / 100)}"
+                                style="transition: stroke-dashoffset 0.8s ease-in-out;" />
+                    </svg>
+                    <div style="position: absolute; font-size: 24px; font-weight: 700; color: var(--text-main);">${completionRate}%</div>
+                </div>
+                <div style="margin-top: 16px; font-size: 14px; color: var(--text-muted); text-align: center;">
+                    You completed <strong style="color: var(--text-main);">${completedTasks}</strong> out of <strong style="color: var(--text-main);">${totalTasks}</strong> total tasks assigned.
+                </div>
+            </div>
+        </div>
+    `;
+}

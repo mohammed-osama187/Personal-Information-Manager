@@ -123,6 +123,8 @@
                         History</button>
                     <button class="menu-item" data-target="pomodoro-page"><i class="fa-solid fa-stopwatch"></i> Focus
                         Timer</button>
+                    <button class="menu-item" data-target="stats-page"><i class="fa-solid fa-chart-simple"></i>
+                        Stats</button>
                     <button class="menu-item" data-target="settings-page"><i class="fa-solid fa-gear"></i>
                         Settings</button>
                 </nav>
@@ -167,6 +169,50 @@
                             Add Task</button>
                     </div>
                 </header>
+
+                <div class="task-controls-bar" style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; align-items: center; justify-content: space-between;">
+                    <div class="filter-group desktop-only-filters" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn-filter active" data-filter="all">All</button>
+                        <button class="btn-filter" data-filter="today">Today</button>
+                        <button class="btn-filter" data-filter="tomorrow">Tomorrow</button>
+                        <button class="btn-filter" data-filter="week">This Week</button>
+                        <button class="btn-filter" data-filter="month">This Month</button>
+                        <button class="btn-filter" data-filter="year">This Year</button>
+                    </div>
+                    <div class="filter-group mobile-only-filters" style="display: none; align-items: center; gap: 8px;">
+                        <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Filter:</span>
+                        <div class="custom-select-wrapper" id="task-filter-wrapper" style="width: 140px; margin-bottom: 0;">
+                            <div class="custom-select-display" id="task-filter-display" style="padding: 6px 12px; font-size: 13.5px; border-radius: 30px;">
+                                All Tasks <i class="fa-solid fa-chevron-down caret-icon"></i>
+                            </div>
+                            <div class="custom-select-options" id="task-filter-options" style="font-size: 13.5px;">
+                                <div class="custom-select-option" data-value="all">All Tasks</div>
+                                <div class="custom-select-option" data-value="today">Today</div>
+                                <div class="custom-select-option" data-value="tomorrow">Tomorrow</div>
+                                <div class="custom-select-option" data-value="week">This Week</div>
+                                <div class="custom-select-option" data-value="month">This Month</div>
+                                <div class="custom-select-option" data-value="year">This Year</div>
+                            </div>
+                            <input type="hidden" id="task-filter-input" value="all">
+                        </div>
+                    </div>
+                    <div class="sort-group" style="display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Sort By:</span>
+                        <div class="custom-select-wrapper" id="task-sort-wrapper" style="width: 140px; margin-bottom: 0;">
+                            <div class="custom-select-display" id="task-sort-display" style="padding: 6px 12px; font-size: 13.5px; border-radius: 30px;">
+                                Default <i class="fa-solid fa-chevron-down caret-icon"></i>
+                            </div>
+                            <div class="custom-select-options" id="task-sort-options" style="font-size: 13.5px;">
+                                <div class="custom-select-option" data-value="default">Default</div>
+                                <div class="custom-select-option" data-value="a-z">A to Z</div>
+                                <div class="custom-select-option" data-value="z-a">Z to A</div>
+                                <div class="custom-select-option" data-value="priority">Priority</div>
+                                <div class="custom-select-option" data-value="time">Time</div>
+                            </div>
+                            <input type="hidden" id="task-sort-input" value="default">
+                        </div>
+                    </div>
+                </div>
 
                 <div id="dashboard-view-container">
                     <!-- Standard List or Kanban board rendered dynamically in app.js -->
@@ -384,6 +430,16 @@
                     <button id="clear-data-btn" class="btn btn-delete"
                         style="background: #FF4D4F; color: white; padding: 12px 24px; border-radius: 30px;">Delete All
                         Tasks & Data</button>
+                </div>
+            </section>
+
+            <section id="stats-page" class="page-section">
+                <header class="page-header">
+                    <h1>Productivity Stats</h1>
+                    <p>Observe your performance, streak values, and focus session stats.</p>
+                </header>
+                <div id="stats-container" class="stats-container-grid">
+                    <!-- Stats content populated dynamically in app.js -->
                 </div>
             </section>
 
@@ -703,7 +759,7 @@
     </script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, doc, updateDoc, getDocs, deleteDoc, getDoc, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, doc, updateDoc, getDocs, deleteDoc, getDoc, query, where, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         // استدعاء مكتبة المصادقة (Authentication) كاملة
         import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, updatePassword, EmailAuthProvider, reauthenticateWithCredential, updateProfile } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
@@ -720,6 +776,18 @@
         const app = initializeApp(firebaseConfig);
 
         window.db = getFirestore(app);
+
+        // Enable offline persistence: tasks load from IndexedDB when there is no internet.
+        // Writes are queued and automatically synced when connectivity returns.
+        enableIndexedDbPersistence(window.db).catch((err) => {
+            if (err.code === 'failed-precondition') {
+                // Multiple tabs open — only one tab can use offline persistence at a time.
+                console.warn('[Firestore] Offline persistence unavailable: multiple tabs open.');
+            } else if (err.code === 'unimplemented') {
+                // The current browser / WebView does not support IndexedDB.
+                console.warn('[Firestore] Offline persistence not supported in this environment.');
+            }
+        });
         window.collection = collection;
         window.addDoc = addDoc;
         window.doc = doc;

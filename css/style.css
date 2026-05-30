@@ -35,25 +35,37 @@ body.dark-theme {
 }
 
 /* Premium smooth transitions and button click micro-animations */
-button:focus, 
-.btn:focus, 
-.btn-toggle:focus, 
-.btn-icon:focus, 
-.btn-menu:focus, 
+button:focus,
+.btn:focus,
+.btn-toggle:focus,
+.btn-icon:focus,
+.btn-menu:focus,
 .floating-btn:focus,
 .menu-item:focus {
     outline: none !important;
     box-shadow: none !important;
 }
 
-.btn, .floating-btn, .btn-icon, .btn-menu, .dropdown-item, .menu-item, .custom-select-display, .btn-toggle {
-    transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1), 
-                color 0.25s cubic-bezier(0.4, 0, 0.2, 1), 
-                transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), 
-                box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+.btn,
+.floating-btn,
+.btn-icon,
+.btn-menu,
+.dropdown-item,
+.menu-item,
+.custom-select-display,
+.btn-toggle {
+    transition: background-color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+        color 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+        transform 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+        box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
-.btn:active, .floating-btn:active, .btn-icon:active, .btn-menu:active, .menu-item:active, .btn-toggle:active {
+.btn:active,
+.floating-btn:active,
+.btn-icon:active,
+.btn-menu:active,
+.menu-item:active,
+.btn-toggle:active {
     transform: scale(0.96) !important;
 }
 
@@ -333,7 +345,7 @@ body {
     border-radius: 24px;
     padding: 15px;
     box-shadow: var(--card-shadow);
-    margin-bottom: 24px;
+    margin-bottom: 5px;
 }
 
 #habits-page .card,
@@ -1796,10 +1808,12 @@ body.dark-theme .fc-theme-standard .fc-day-today {
     color: var(--text-muted);
     transition: all 0.2s ease;
 }
+
 .btn-toggle:hover {
     color: var(--color-ticktick-blue);
     background-color: var(--border-color);
 }
+
 .btn-toggle.active {
     background-color: var(--card-bg) !important;
     color: var(--color-ticktick-blue) !important;
@@ -1817,6 +1831,7 @@ body.dark-theme .fc-theme-standard .fc-day-today {
     margin-top: 8px;
     width: 100%;
 }
+
 .event-choice-radio-label {
     flex: 1;
     display: flex;
@@ -1833,22 +1848,28 @@ body.dark-theme .fc-theme-standard .fc-day-today {
     border: none !important;
     background: none !important;
 }
+
 .event-choice-radio-label:hover {
     color: var(--text-main);
 }
+
 .event-choice-radio-label input[type="radio"] {
-    display: none !important; /* Hide circular radio completely */
+    display: none !important;
+    /* Hide circular radio completely */
 }
+
 .event-choice-radio-label:has(input[type="radio"]:checked) {
     background-color: var(--color-ticktick-blue) !important;
     color: white !important;
     box-shadow: 0 2px 8px rgba(47, 123, 246, 0.3);
 }
+
 .event-choice-radio-label:has(input[value="date"]) {
     position: relative;
     top: 3px;
     left: 3px;
 }
+
 .event-choice-radio-label:has(input[value="duration"]) {
     position: relative;
     top: 3px;
@@ -1874,6 +1895,7 @@ body.dark-theme .fc-theme-standard .fc-day-today {
 .fc-event-main-frame {
     flex-wrap: wrap !important;
 }
+
 .fc-event-title {
     font-weight: 500 !important;
 }
@@ -2012,11 +2034,181 @@ body.dark-theme .fc-theme-standard .fc-day-today {
         height: 24px;
         font-size: 10px;
     }
+
     .day-initial {
         width: 24px;
         font-size: 10px;
     }
+
     .habit-calendar-wrapper {
         padding: 12px;
+    }
+}
+
+/* ==========================================
+   Premium Habit Highlights & Stats Styles
+   ========================================== */
+.day-circle.future.scheduled {
+    border: 1.5px dashed var(--color-ticktick-blue);
+    background: rgba(47, 123, 246, 0.04);
+    color: var(--text-main);
+    opacity: 0.7;
+    cursor: default;
+}
+
+.day-circle.today-scheduled {
+    border: 2px solid var(--color-ticktick-blue);
+    background: rgba(47, 123, 246, 0.08);
+    color: var(--color-ticktick-blue);
+    box-shadow: 0 0 6px rgba(47, 123, 246, 0.15);
+    cursor: pointer;
+}
+
+.day-circle.today-scheduled:active {
+    transform: scale(0.85);
+}
+
+.stats-container-grid {
+    padding: 8px 0;
+}
+
+.stat-card {
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s ease;
+}
+
+.stat-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.stat-habit-row {
+    transition: all 0.2s ease;
+}
+
+.stat-habit-row:hover {
+    background-color: rgba(47, 123, 246, 0.06) !important;
+    border-color: var(--color-ticktick-blue) !important;
+}
+
+/* ==========================================
+   Full-Screen Premium Mobile Modals (<= 600px)
+   ========================================== */
+@media (max-width: 600px) {
+    .modal {
+        background: var(--card-bg);
+        backdrop-filter: none;
+        z-index: 1050;
+        align-items: flex-start;
+        justify-content: flex-start;
+    }
+
+    .modal-content {
+        width: 100% !important;
+        max-width: 100% !important;
+        height: 100vh !important;
+        max-height: 100vh !important;
+        border-radius: 0 !important;
+        padding: 24px 20px 40px 20px !important;
+        animation: slideUpMobile 0.38s cubic-bezier(0.32, 0.94, 0.6, 1) !important;
+        box-shadow: none !important;
+        border: none !important;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Confirmation dialog remains standard sized and centered to look nice */
+    #confirm-modal {
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(4px);
+        align-items: center;
+        justify-content: center;
+    }
+
+    #confirm-modal .modal-content {
+        height: auto !important;
+        max-height: 80vh !important;
+        width: 90% !important;
+        max-width: 350px !important;
+        border-radius: 24px !important;
+        padding: 24px !important;
+        animation: fadeIn 0.2s ease !important;
+        box-shadow: var(--card-shadow) !important;
+        margin: auto !important;
+    }
+
+    @keyframes slideUpMobile {
+        from {
+            transform: translateY(100%);
+        }
+
+        to {
+            transform: translateY(0);
+        }
+    }
+
+    /* Premium borderless styling to render lists directly on the page without nesting wrappers, excluding stats page cards */
+    #tasks-page .card,
+    #tasks-page .tasks-list-card,
+    #habits-page .card,
+    #habits-page .tasks-list-card,
+    #history-page .card,
+    #history-page .tasks-list-card {
+        background: transparent !important;
+        border: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+        box-shadow: none !important;
+        margin: 0 0 20px 0 !important;
+    }
+}
+
+/* ==========================================
+   Task Filter and Selector Button Styles
+   ========================================== */
+.btn-filter {
+    background: var(--item-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    padding: 6px 16px;
+    border-radius: 30px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.btn-filter:hover {
+    border-color: var(--color-ticktick-blue);
+    color: var(--color-ticktick-blue);
+}
+
+.btn-filter.active {
+    background: var(--color-ticktick-blue);
+    color: white !important;
+    border-color: var(--color-ticktick-blue);
+    box-shadow: 0 2px 6px rgba(47, 123, 246, 0.2);
+}
+
+/* ==========================================
+   Responsive Filter Selector Visibility
+   ========================================== */
+@media (min-width: 601px) {
+    .desktop-only-filters {
+        display: flex !important;
+    }
+
+    .mobile-only-filters {
+        display: none !important;
+    }
+}
+
+@media (max-width: 600px) {
+    .desktop-only-filters {
+        display: none !important;
+    }
+
+    .mobile-only-filters {
+        display: flex !important;
     }
 }

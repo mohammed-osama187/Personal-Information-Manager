@@ -768,13 +768,14 @@ function initOfflineNotifications() {
                     displayTasks();
                 });
 
-                // Fire instantly without delay
-                showToast(`Overdue: ${item.title}`, 'error', true);
-                playSound('error');
+                // Only trigger web notifications/sounds if we are NOT on a Capacitor wrapper (which has native OS local scheduling!)
+                if (!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications)) {
+                    showToast(`Overdue: ${item.title}`, 'error', true);
+                    playSound('error');
+                    fireWebNotification("Task Overdue!", `The deadline for "${item.title}" has passed.`);
+                }
 
-                fireWebNotification("Task Overdue!", `The deadline for "${item.title}" has passed.`);
-
-                // Add to missed notifications queue
+                // Add to missed notifications queue (in-app notifications panel)
                 addMissedNotification(`Overdue: ${item.title}`, item.dueTime || '23:59', 'overdue');
             }
 
@@ -811,13 +812,14 @@ function initOfflineNotifications() {
                     displayTasks();
                 });
 
-                // Fire instantly without delay
-                showToast(`Reminder: ${item.title}`, 'info', true);
-                playSound('success');
+                // Only trigger web notifications/sounds if we are NOT on a Capacitor wrapper (which has native OS local scheduling!)
+                if (!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications)) {
+                    showToast(`Reminder: ${item.title}`, 'info', true);
+                    playSound('success');
+                    fireWebNotification("Task Reminder", `It's time for: ${item.title}`);
+                }
 
-                fireWebNotification("Task Reminder", `It's time for: ${item.title}`);
-
-                // Add to missed notifications queue
+                // Add to missed notifications queue (in-app notifications panel)
                 addMissedNotification(item.title, item.startTime, 'reminder');
             }
         });
@@ -1033,9 +1035,9 @@ window.scheduleMobileNotification = function(id, title, body, triggerTime) {
                     schedule: { at: new Date(triggerTime), allowWhileIdle: true },
                     sound: 'success', // Reference raw resource without extension
                     channelId: 'flowtick-alerts-v3',
-                    ongoing: true,        // <--- This prevents the user from accidentally swiping it away
-                    autoCancel: false,    // <--- Keeps the notification in the tray until you manually dismiss it
-                    foreground: true,     // <--- Forces the notification to appear even if the app is open
+                    ongoing: false,       // False so normal task reminders can be swiped away successfully
+                    autoCancel: true,     // True so clicking dismisses them and they can be swiped away
+                    foreground: true,     // Forces the notification to appear even if the app is open
                     actionTypeId: '',
                     extra: null
                 }]
@@ -1088,6 +1090,58 @@ window.cancelMobileNotification = function(id) {
         return;
     }
 };
+
+// ==========================================
+// Native Local Notification Interaction & Permissions setup
+// ==========================================
+(function() {
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+        // 1. Proactively request native permissions at app startup
+        window.Capacitor.Plugins.LocalNotifications.requestPermissions().then(result => {
+            console.log('[NativeBridge] Native notification permissions:', result);
+        });
+
+        function handleNotificationAction(notifId) {
+            if (!notifId) return;
+            const idNum = parseInt(notifId);
+            // Pomodoro timer notification is 999991, 999992, 999993 or 888888
+            if (idNum === 999991 || idNum === 999992 || idNum === 999993 || idNum === 888888) {
+                // Direct user to the Focus page!
+                const menuItem = document.querySelector('.menu-item[data-target="pomodoro-page"]');
+                if (menuItem) menuItem.click();
+                return;
+            }
+
+            // Find the task in our database
+            getTasksFromFirebase().then(tasks => {
+                const task = tasks.find(t => {
+                    const numId = String(t.id).replace(/[^0-9]/g, '').slice(0, 8);
+                    const dueNumId = (String(t.id).replace(/[^0-9]/g, '').slice(0, 7) || '0') + '2';
+                    return String(numId) === String(notifId) || String(dueNumId) === String(notifId);
+                });
+
+                if (task) {
+                    // 1. Direct the user to the tasks page
+                    const menuItem = document.querySelector('.menu-item[data-target="tasks-page"]');
+                    if (menuItem) menuItem.click();
+
+                    // 2. Open the edit modal for the task
+                    if (window.editItem) {
+                        window.editItem(task.id);
+                    }
+                }
+            });
+        }
+
+        // Listener for click actions
+        window.Capacitor.Plugins.LocalNotifications.addListener('localNotificationActionPerformed', (action) => {
+            console.log('[NativeBridge] Notification clicked:', action);
+            if (action && action.notification && action.notification.id) {
+                handleNotificationAction(action.notification.id);
+            }
+        });
+    }
+})();
 
 window.scheduleItemNotifications = function(item) {
     if (!item || item.isCompleted || item.isCancelled || item.isDeleted) {
@@ -3283,6 +3337,15 @@ function initPomodoroDrag() {
     window.addEventListener('touchmove', handleDrag, {passive: false});
     window.addEventListener('touchend', () => { isDragging = false; });
 
+    function cancelAllPomodoroNotifications() {
+        if (window.cancelMobileNotification) {
+            window.cancelMobileNotification(999991);
+            window.cancelMobileNotification(999992);
+            window.cancelMobileNotification(999993);
+            window.cancelMobileNotification(888888);
+        }
+    }
+
     function syncTimerWithTimePassed() {
         if (!isRunning) return;
         const expectedEnd = localStorage.getItem('pomodoro_expected_end');
@@ -3302,9 +3365,7 @@ function initPomodoroDrag() {
 
             if (timeLeft <= 0) {
                 playSound('pomodoro');
-                if (window.cancelMobileNotification) {
-                    window.cancelMobileNotification(888888); // Clear silent ticking notification
-                }
+                cancelAllPomodoroNotifications();
                 delete window.lastMinutesRemaining;
 
                 if (isWorkSession) {
@@ -3315,9 +3376,18 @@ function initPomodoroDrag() {
                     timeLeft = Math.round(sessionMinutes / 5) * 60;
                     const nextEnd = Date.now() + (timeLeft * 1000);
                     localStorage.setItem('pomodoro_expected_end', nextEnd);
+                    
                     if (window.scheduleMobileNotification) {
+                        // 1. Immediately push "Focus Session Finished" notification to the system status tray
                         window.scheduleMobileNotification(
-                            999999,
+                            999991,
+                            'Focus Session Finished!',
+                            'Great focus! Time for a short break.',
+                            Date.now() + 100
+                        );
+                        // 2. Schedule future native alarm for the end of the Break session
+                        window.scheduleMobileNotification(
+                            999993,
                             'Break Time Finished!',
                             'Break over! Ready to focus on the next task?',
                             nextEnd
@@ -3334,8 +3404,15 @@ function initPomodoroDrag() {
                     knob.style.display = 'block';
                     showToast('Break over! Ready to focus?', 'info');
                     localStorage.removeItem('pomodoro_expected_end');
-                    if (window.cancelMobileNotification) {
-                        window.cancelMobileNotification(999999);
+                    
+                    if (window.scheduleMobileNotification) {
+                        // Immediately push "Break Session Finished" notification to the system status tray
+                        window.scheduleMobileNotification(
+                            999992,
+                            'Break Time Finished!',
+                            'Break over! Ready to focus on the next task?',
+                            Date.now() + 100
+                        );
                     }
                     updateKnobByMinutes(sessionMinutes);
                 }
@@ -3357,10 +3434,7 @@ function initPomodoroDrag() {
             isRunning = false;
             btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Resume';
             localStorage.removeItem('pomodoro_expected_end');
-            if (window.cancelMobileNotification) {
-                window.cancelMobileNotification(999999);
-                window.cancelMobileNotification(888888); // Clear silent ticking notification on pause
-            }
+            cancelAllPomodoroNotifications();
             delete window.lastMinutesRemaining;
         } else {
             isRunning = true;
@@ -3369,9 +3443,11 @@ function initPomodoroDrag() {
             
             const expectedEnd = Date.now() + (timeLeft * 1000);
             localStorage.setItem('pomodoro_expected_end', expectedEnd);
+            
             if (window.scheduleMobileNotification) {
+                // Schedule the native future alarm for the end of the current Focus/Break session
                 window.scheduleMobileNotification(
-                    999999,
+                    999993,
                     isWorkSession ? 'Focus Session Finished!' : 'Break Time Finished!',
                     isWorkSession ? 'Great focus! Time for a short break.' : 'Break over! Ready to focus on the next task?',
                     expectedEnd
@@ -3400,10 +3476,7 @@ function initPomodoroDrag() {
         progressPath.style.stroke = 'var(--color-ticktick-blue)';
         btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Start';
         localStorage.removeItem('pomodoro_expected_end');
-        if (window.cancelMobileNotification) {
-            window.cancelMobileNotification(999999);
-            window.cancelMobileNotification(888888); // Clear silent ticking notification on reset
-        }
+        cancelAllPomodoroNotifications();
         delete window.lastMinutesRemaining;
         updateKnobByMinutes(25);
     });

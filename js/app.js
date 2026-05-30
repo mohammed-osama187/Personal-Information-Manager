@@ -1011,6 +1011,7 @@ window.scheduleMobileNotification = function(id, title, body, triggerTime) {
             visibility: 1
         }).then(() => {
             // 2. Schedule the notification to bypass Doze mode
+            const isOngoing = (String(id) === '999999');
             window.Capacitor.Plugins.LocalNotifications.schedule({
                 notifications: [{
                     id: Math.abs(parseInt(id)) || Math.floor(Math.random() * 1000000),
@@ -1019,6 +1020,8 @@ window.scheduleMobileNotification = function(id, title, body, triggerTime) {
                     schedule: { at: new Date(triggerTime), allowWhileIdle: true }, // Crucial for background firing
                     sound: 'pomodoro.mp3',
                     channelId: 'flowtick-alerts-v2',
+                    ongoing: isOngoing,
+                    autoCancel: !isOngoing,
                     actionTypeId: '',
                     extra: null
                 }]

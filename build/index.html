@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FlowTick</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="logo1.png">
+
+</head>
+
+<body>
+
+    <div id="auth-screen" class="auth-screen" style="display: none;">
+        <div class="auth-card">
+            <form id="login-form" class="auth-form active">
+                <div class="auth-header">
+                    <h2>Welcome Back</h2>
+                    <p>Log in to access your dashboard.</p>
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="login-email" placeholder="Enter your email" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <div class="password-field-wrapper">
+                        <input type="password" id="login-password" placeholder="Enter your password" required>
+                        <i class="fa-solid fa-eye-slash toggle-password-icon"
+                            onclick="togglePasswordVisibility('login-password', this)"></i>
+                    </div>
+                </div>
+                <div style="text-align: right; margin-top: -10px; margin-bottom: 16px;">
+                    <a href="#" id="forgot-password-link"
+                        style="font-size: 12px; color: var(--color-ticktick-blue); text-decoration: none;">Forgot
+                        Password?</a>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Log In</button>
+                <div class="auth-toggle">
+                    Don't have an account? <span onclick="toggleAuth('signup')">Sign Up</span>
+                </div>
+                <div style="text-align: center; margin-top: 16px;">
+                    <a href="#" class="continue-guest-btn" onclick="closeAuthScreen(event)"
+                        style="font-size: 13px; color: var(--text-muted); text-decoration: none; font-weight: 500;">Continue
+                        as Guest</a>
+                </div>
+            </form>
+
+            <form id="signup-form" class="auth-form" style="display: none;">
+                <div class="auth-header">
+                    <h2>Create Account</h2>
+                    <p>Start organizing your life today.</p>
+                </div>
+                <div class="form-group">
+                    <label>Full Name</label>
+                    <input type="text" id="signup-name" placeholder="Enter your full name" required>
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="signup-email" placeholder="Enter your email" required>
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <div class="password-field-wrapper">
+                        <input type="password" id="signup-password" placeholder="Create a password" required>
+                        <i class="fa-solid fa-eye-slash toggle-password-icon"
+                            onclick="togglePasswordVisibility('signup-password', this)"></i>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Confirm Password</label>
+                    <div class="password-field-wrapper">
+                        <input type="password" id="signup-confirm-password" placeholder="Confirm your password"
+                            required>
+                        <i class="fa-solid fa-eye-slash toggle-password-icon"
+                            onclick="togglePasswordVisibility('signup-confirm-password', this)"></i>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Sign Up</button>
+                <div class="auth-toggle">
+                    Already have an account? <span onclick="toggleAuth('login')">Log In</span>
+                </div>
+                <div style="text-align: center; margin-top: 16px;">
+                    <a href="#" class="continue-guest-btn" onclick="closeAuthScreen(event)"
+                        style="font-size: 13px; color: var(--text-muted); text-decoration: none; font-weight: 500;">Continue
+                        as Guest</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="app-screen" class="app-container" style="display: none;">
+
+        <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-top">
+                <div class="user-profile" style="display: flex; align-items: center; width: 100%; gap: 10px;">
+                    <div class="avatar" style="flex-shrink: 0;"><i class="fa-solid fa-user"></i></div>
+                    <span class="username" id="display-username"
+                        style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; font-weight: 600;">My
+                        Profile</span>
+                    <i class="fa-solid fa-right-from-bracket" id="logout-btn" title="Log Out"
+                        style="cursor: pointer; color: #FF4D4F; margin-left: auto; font-size: 18px; padding: 4px; display: block;"></i>
+                    <i class="fa-solid fa-right-to-bracket" id="login-sidebar-btn" title="Log In / Sign Up"
+                        style="cursor: pointer; color: var(--color-ticktick-blue); margin-left: auto; font-size: 18px; padding: 4px; display: none;"></i>
+                </div>
+                <nav class="menu">
+                    <button class="menu-item active" data-target="tasks-page"><i class="fa-solid fa-list-check"></i>
+                        Tasks</button>
+                    <button class="menu-item" data-target="habits-page"><i class="fa-solid fa-rotate"></i>
+                        Habits</button>
+                    <button class="menu-item" data-target="calendar-page"><i class="fa-regular fa-calendar-days"></i>
+                        Calendar</button>
+                    <button class="menu-item" data-target="history-page"><i class="fa-solid fa-clock-rotate-left"></i>
+                        History</button>
+                    <button class="menu-item" data-target="pomodoro-page"><i class="fa-solid fa-stopwatch"></i> Focus
+                        Timer</button>
+                    <button class="menu-item" data-target="settings-page"><i class="fa-solid fa-gear"></i>
+                        Settings</button>
+                </nav>
+            </div>
+        </aside>
+
+        <main class="main-content">
+
+            <button id="hamburger-btn" class="floating-btn hamburger-btn"><i class="fa-solid fa-bars"></i></button>
+            <div class="notification-container">
+                <button id="notification-btn" class="notif-btn" title="Missed Notifications">
+                    <i class="fa-solid fa-bell"></i>
+                    <span id="notification-badge" class="notif-badge" style="display: none;">0</span>
+                </button>
+                <div id="notification-dropdown" class="notification-dropdown">
+                    <div class="notif-header">
+                        <span>Missed Notifications</span>
+                        <button id="clear-notifications-btn" class="btn-clear-notif">Clear All</button>
+                    </div>
+                    <div id="notif-list" class="notif-list">
+                        <div class="no-notif">No missed notifications</div>
+                    </div>
+                </div>
+            </div>
+            <button id="theme-toggle" class="floating-btn theme-btn"><i class="fa-solid fa-moon"></i></button>
+
+            <section id="tasks-page" class="page-section active">
+                <header class="page-header flex-header">
+                    <div>
+                        <h1 id="dashboard-title">My Dashboard</h1>
+                        <p>Track your upcoming, current, and overdue tasks live.</p>
+                    </div>
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <div class="view-toggle-container"
+                            style="display: flex; background: var(--item-bg); border: 1px solid var(--border-color); border-radius: 30px; padding: 4px;">
+                            <button id="view-list-btn" class="btn-toggle active" title="Standard List"><i
+                                    class="fa-solid fa-list"></i></button>
+                            <button id="view-kanban-btn" class="btn-toggle" title="Kanban Board"><i
+                                    class="fa-solid fa-columns"></i></button>
+                        </div>
+                        <button class="btn btn-primary open-modal-btn" data-type="task"><i class="fa-solid fa-plus"></i>
+                            Add Task</button>
+                    </div>
+                </header>
+
+                <div id="dashboard-view-container">
+                    <!-- Standard List or Kanban board rendered dynamically in app.js -->
+                </div>
+            </section>
+
+            <section id="habits-page" class="page-section">
+                <header class="page-header flex-header">
+                    <div>
+                        <h1>Habit Tracker</h1>
+                        <p>Daily routines you want to stick to.</p>
+                    </div>
+                    <button class="btn btn-primary open-modal-btn" data-type="habit"><i class="fa-solid fa-plus"></i>
+                        Add Habit</button>
+                </header>
+                <div class="card tasks-list-card">
+                    <div id="habits-container" class="tasks-container"></div>
+                </div>
+            </section>
+
+            <section id="history-page" class="page-section">
+                <header class="page-header">
+                    <h1>History</h1>
+                    <p>Tasks and events you have successfully completed.</p>
+                </header>
+                <div class="card tasks-list-card">
+                    <div id="history-tasks" class="tasks-container"></div>
+                </div>
+            </section>
+
+            <section id="calendar-page" class="page-section">
+                <header class="page-header flex-header">
+                    <div>
+                        <h1>Calendar</h1>
+                        <p>Your scheduled events and deadlines.</p>
+                    </div>
+                    <button class="btn btn-primary open-modal-btn" data-type="event"><i
+                            class="fa-solid fa-calendar-plus"></i> Add Event</button>
+                </header>
+                <div class="card">
+                    <div id="calendar-placeholder"></div>
+                </div>
+            </section>
+
+            <section id="pomodoro-page" class="page-section">
+                <header class="page-header">
+                    <h1>Interactive Pomodoro</h1>
+                    <p>Select a task, set your focus time, and begin.</p>
+                </header>
+                <div class="pomodoro-wrapper">
+                    <div class="card pomodoro-card">
+
+                        <div class="form-group" style="text-align: left; margin-bottom: 24px;">
+                            <label>Focusing on:</label>
+                            <div style="display: flex; gap: 8px; align-items: center; width: 100%;">
+                                <div class="custom-select-wrapper" id="pomodoro-task-wrapper" style="flex-grow: 1;">
+                                    <div class="custom-select-display" id="pomodoro-task-display"
+                                        style="background-color: var(--bg-notion-sidebar); border: none;">
+                                        No specific task <i class="fa-solid fa-chevron-down caret-icon"></i>
+                                    </div>
+                                    <div class="custom-select-options" id="pomodoro-task-options">
+                                        <div class="custom-select-option" data-value="">No specific task</div>
+                                    </div>
+                                    <input type="hidden" id="pomodoro-task-select" value="">
+                                </div>
+                                <button id="pomodoro-mark-done" class="btn btn-primary"
+                                    style="display: none; padding: 0 16px; height: 38px; border-radius: 30px;"
+                                    title="Mark Task as Done"><i class="fa-solid fa-check"></i></button>
+                            </div>
+                        </div>
+
+                        <div class="circle-timer-container" id="svg-container">
+                            <svg class="timer-svg" width="240" height="240">
+                                <path class="timer-circle-bg" d="M 49.3 190.7 A 100 100 0 1 1 190.7 190.7" fill="none">
+                                </path>
+                                <path id="timer-progress" class="timer-circle-progress"
+                                    d="M 49.3 190.7 A 100 100 0 1 1 190.7 190.7" fill="none"></path>
+                                <circle id="timer-knob" class="timer-knob" cx="49.3" cy="190.7" r="12"></circle>
+                            </svg>
+                            <div class="timer-center-text">
+                                <div class="timer-type" id="timer-status"><i class="fa-solid fa-bullseye"></i> Focus
+                                </div>
+                                <div class="timer-display" id="timer-clock">25:00</div>
+                            </div>
+                        </div>
+
+                        <div class="pomodoro-quick-actions">
+                            <button class="btn btn-secondary quick-time-btn" data-time="25">25m</button>
+                            <button class="btn btn-secondary quick-time-btn" data-time="50">50m</button>
+                            <button class="btn btn-secondary quick-time-btn" data-time="120">120m</button>
+                        </div>
+
+                        <div class="timer-settings-circular">
+                            <div class="break-preview">Focus: <span id="session-val">25</span>m | Break: <span
+                                    id="break-val">5</span>m</div>
+                        </div>
+
+                        <div class="timer-controls">
+                            <button id="btn-start-timer" class="btn btn-primary"><i class="fa-solid fa-play"></i>
+                                Start</button>
+                            <button id="btn-reset-timer" class="btn btn-secondary"><i
+                                    class="fa-solid fa-rotate-right"></i> Reset</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="settings-page" class="page-section">
+                <header class="page-header">
+                    <h1>Settings</h1>
+                    <p>Manage your account preferences and data.</p>
+                </header>
+
+                <div class="card">
+                    <h3 style="margin-bottom: 20px; font-size: 18px;">Account Details</h3>
+                    <form id="settings-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Display Name</label>
+                                <input type="text" id="settings-name" required>
+                            </div>
+                            <div class="form-group">
+                                <label>Email Address</label>
+                                <input type="email" id="settings-email" required disabled
+                                    style="opacity: 0.6; cursor: not-allowed;">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Save Profile</button>
+                    </form>
+                </div>
+
+                <div class="card">
+                    <h3 style="margin-bottom: 20px; font-size: 18px;">App Preferences</h3>
+                    <div style="display: flex; flex-direction: column; gap: 14px; padding: 4px 0;">
+                        <label
+                            style="display: flex; align-items: center; gap: 12px; font-size: 14.5px; font-weight: 500; cursor: pointer; color: var(--text-main); margin-bottom: 0;">
+                            <input type="checkbox" id="pref-show-tasks" class="custom-checkbox">
+                            <span>Show Tasks in Calendar</span>
+                        </label>
+                        <label
+                            style="display: flex; align-items: center; gap: 12px; font-size: 14.5px; font-weight: 500; cursor: pointer; color: var(--text-main); margin-bottom: 0;">
+                            <input type="checkbox" id="pref-show-events" class="custom-checkbox">
+                            <span>Show Events in Calendar</span>
+                        </label>
+                        <label
+                            style="display: flex; align-items: center; gap: 12px; font-size: 14.5px; font-weight: 500; cursor: pointer; color: var(--text-main); margin-bottom: 0;">
+                            <input type="checkbox" id="pref-show-habits" class="custom-checkbox">
+                            <span>Show Habits in Calendar</span>
+                        </label>
+
+                        <div class="form-row" style="margin-top: 10px; gap: 16px;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Time
+                                    Format</label>
+                                <div class="custom-select-wrapper" id="pref-time-format-wrapper">
+                                    <div class="custom-select-display" id="pref-time-format-display"
+                                        style="padding-top: 9px; padding-bottom: 9px;">
+                                        12-Hour (AM/PM) <i class="fa-solid fa-chevron-down caret-icon"></i>
+                                    </div>
+                                    <div class="custom-select-options" id="pref-time-format-options">
+                                        <div class="custom-select-option" data-value="12h">12-Hour (AM/PM)</div>
+                                        <div class="custom-select-option" data-value="24h">24-Hour Format</div>
+                                    </div>
+                                    <input type="hidden" id="pref-time-format" value="12h">
+                                </div>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Dashboard
+                                    View</label>
+                                <div class="custom-select-wrapper" id="pref-dashboard-layout-wrapper">
+                                    <div class="custom-select-display" id="pref-dashboard-layout-display"
+                                        style="padding-top: 9px; padding-bottom: 9px;">
+                                        Standard List <i class="fa-solid fa-chevron-down caret-icon"></i>
+                                    </div>
+                                    <div class="custom-select-options" id="pref-dashboard-layout-options">
+                                        <div class="custom-select-option" data-value="list">Standard List</div>
+                                        <div class="custom-select-option" data-value="kanban">Kanban Board</div>
+                                    </div>
+                                    <input type="hidden" id="pref-dashboard-layout" value="list">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3 style="margin-bottom: 20px; font-size: 18px;">Security</h3>
+                    <form id="password-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Current Password</label>
+                                <div class="password-field-wrapper">
+                                    <input type="password" id="current-password" required>
+                                    <i class="fa-solid fa-eye-slash toggle-password-icon"
+                                        onclick="togglePasswordVisibility('current-password', this)"></i>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>New Password</label>
+                                <div class="password-field-wrapper">
+                                    <input type="password" id="new-password" required>
+                                    <i class="fa-solid fa-eye-slash toggle-password-icon"
+                                        onclick="togglePasswordVisibility('new-password', this)"></i>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-secondary">Update Password</button>
+                    </form>
+                </div>
+
+                <div class="card" style="border-color: #FF4D4F33; background: #FF4D4F05;">
+                    <h3 style="margin-bottom: 10px; font-size: 18px; color: #FF4D4F;">Danger Zone</h3>
+                    <p style="color: var(--text-muted); margin-bottom: 20px; font-size: 14px;">Once you delete your
+                        local data, there is no going back. Please be certain.</p>
+                    <button id="clear-data-btn" class="btn btn-delete"
+                        style="background: #FF4D4F; color: white; padding: 12px 24px; border-radius: 30px;">Delete All
+                        Tasks & Data</button>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <div id="task-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Add New</h3>
+                <button id="close-modal" class="close-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="task-form">
+                <input type="hidden" id="edit-item-id" value="">
+                <input type="hidden" id="item-type" value="task">
+
+                <div class="form-group">
+                    <input type="text" id="task-title" placeholder="Title" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Description (Optional)</label>
+                    <textarea id="item-description" placeholder="Add additional details or notes here..." rows="3"
+                        style="width: 100%; padding: 12px 16px; border: 1px solid var(--border-color); border-radius: 16px; font-family: inherit; font-size: 14px; background-color: var(--item-bg); color: var(--text-main); outline: none; transition: 0.2s; resize: vertical;"></textarea>
+                </div>
+
+                <div class="form-group id-task-only custom-bg"
+                    style="padding: 12px; border-radius: 12px; margin-bottom: 16px;">
+                    <label>Sub-Tasks (Optional)</label>
+                    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                        <input type="text" id="subtask-input" placeholder="Add a sub-task step...">
+                        <button type="button" id="add-subtask-btn" class="btn btn-secondary"
+                            style="padding: 8px 16px;">Add</button>
+                    </div>
+                    <ul id="subtasks-list" style="list-style: none; display: flex; flex-direction: column; gap: 6px;">
+                    </ul>
+                </div>
+
+                <div class="form-row" id="start-date-row">
+                    <div class="form-group">
+                        <label>Start Date</label>
+                        <input type="date" id="task-start-date" required>
+                    </div>
+                    <div class="form-group" id="start-time-container">
+                        <label id="label-time-start">Time (Optional)</label>
+                        <div class="custom-time-picker" id="time-picker-start">
+                            <div class="custom-select-wrapper time-hour-wrapper">
+                                <div class="custom-select-display time-hour-display">-- <i
+                                        class="fa-solid fa-chevron-down caret-icon"></i></div>
+                                <div class="custom-select-options time-hour-options"></div>
+                                <input type="hidden" class="time-hour-input" value="">
+                            </div>
+                            <div class="time-separator">:</div>
+                            <div class="custom-select-wrapper time-minute-wrapper">
+                                <div class="custom-select-display time-minute-display">-- <i
+                                        class="fa-solid fa-chevron-down caret-icon"></i></div>
+                                <div class="custom-select-options time-minute-options"></div>
+                                <input type="hidden" class="time-minute-input" value="">
+                            </div>
+                            <div class="custom-select-wrapper time-ampm-wrapper">
+                                <div class="custom-select-display time-ampm-display">-- <i
+                                        class="fa-solid fa-chevron-down caret-icon"></i></div>
+                                <div class="custom-select-options time-ampm-options"></div>
+                                <input type="hidden" class="time-ampm-input" value="">
+                            </div>
+                        </div>
+                        <input type="hidden" id="task-start-time">
+                    </div>
+                </div>
+
+                <div class="form-row id-event-only" id="event-end-choice-container"
+                    style="display:none; margin-bottom: 16px; width: 100%;">
+                    <div class="form-group" style="margin-bottom: 0; width: 100%;">
+                        <label>Specify End By</label>
+                        <div class="event-choice-radio-group">
+                            <label class="event-choice-radio-label">
+                                <input type="radio" name="event-end-choice" value="date" checked>
+                                <span>End Date & Time</span>
+                            </label>
+                            <label class="event-choice-radio-label">
+                                <input type="radio" name="event-end-choice" value="duration">
+                                <span>Duration</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="dynamic-row" class="form-row">
+                    <div class="form-group id-task-only" id="deadline-container" style="flex: 1.2;">
+                        <label>Deadline (Optional)</label>
+                        <input type="date" id="task-due-date">
+                    </div>
+                    <div class="form-group id-task-only" id="deadline-time-container" style="flex: 1; display: block;">
+                        <label>Deadline Time (Optional)</label>
+                        <div class="custom-time-picker" id="time-picker-due">
+                            <div class="custom-select-wrapper time-hour-wrapper open-upward">
+                                <div class="custom-select-display time-hour-display">-- <i
+                                        class="fa-solid fa-chevron-down caret-icon"></i></div>
+                                <div class="custom-select-options time-hour-options"></div>
+                                <input type="hidden" class="time-hour-input" value="">
+                            </div>
+                            <div class="time-separator">:</div>
+                            <div class="custom-select-wrapper time-minute-wrapper open-upward">
+                                <div class="custom-select-display time-minute-display">-- <i
+                                        class="fa-solid fa-chevron-down caret-icon"></i></div>
+                                <div class="custom-select-options time-minute-options"></div>
+                                <input type="hidden" class="time-minute-input" value="">
+                            </div>
+                            <div class="custom-select-wrapper time-ampm-wrapper open-upward">
+                                <div class="custom-select-display time-ampm-display">-- <i
+                                        class="fa-solid fa-chevron-down caret-icon"></i></div>
+                                <div class="custom-select-options time-ampm-options"></div>
+                                <input type="hidden" class="time-ampm-input" value="">
+                            </div>
+                        </div>
+                        <input type="hidden" id="task-due-time">
+                    </div>
+                    <div class="form-group id-event-only" id="event-end-date-group" style="display:none;">
+                        <label>End Date</label>
+                        <input type="date" id="event-end-date">
+                    </div>
+                    <div class="form-group id-event-only" id="event-end-time-group" style="display:none;">
+                        <label>End Time</label>
+                        <div class="custom-time-picker" id="time-picker-end">
+                            <div class="custom-select-wrapper time-hour-wrapper open-upward">
+                                <div class="custom-select-display time-hour-display">-- <i
+                                        class="fa-solid fa-chevron-down caret-icon"></i></div>
+                                <div class="custom-select-options time-hour-options"></div>
+                                <input type="hidden" class="time-hour-input" value="">
+                            </div>
+                            <div class="time-separator">:</div>
+                            <div class="custom-select-wrapper time-minute-wrapper open-upward">
+                                <div class="custom-select-display time-minute-display">-- <i
+                                        class="fa-solid fa-chevron-down caret-icon"></i></div>
+                                <div class="custom-select-options time-minute-options"></div>
+                                <input type="hidden" class="time-minute-input" value="">
+                            </div>
+                            <div class="custom-select-wrapper time-ampm-wrapper open-upward">
+                                <div class="custom-select-display time-ampm-display">-- <i
+                                        class="fa-solid fa-chevron-down caret-icon"></i></div>
+                                <div class="custom-select-options time-ampm-options"></div>
+                                <input type="hidden" class="time-ampm-input" value="">
+                            </div>
+                        </div>
+                        <input type="hidden" id="event-end-time">
+                    </div>
+                    <div class="form-group id-event-only" id="event-duration-container"
+                        style="display:none; width: 100%;">
+                        <label>Duration</label>
+                        <div style="display: flex; gap: 12px; width: 100%;">
+                            <input type="number" id="event-duration-num" min="1" value="60"
+                                style="flex: 1.5; border-radius: 30px; padding: 8px 16px;">
+                            <div class="custom-select-wrapper open-upward" id="event-duration-unit-wrapper"
+                                style="flex: 1;">
+                                <div class="custom-select-display" id="event-duration-unit-display"
+                                    style="padding-top: 9px; padding-bottom: 9px;">
+                                    Minutes <i class="fa-solid fa-chevron-down caret-icon"></i>
+                                </div>
+                                <div class="custom-select-options" id="event-duration-unit-options">
+                                    <div class="custom-select-option" data-value="minutes">Minutes</div>
+                                    <div class="custom-select-option" data-value="hours">Hours</div>
+                                    <div class="custom-select-option" data-value="days">Days</div>
+                                    <div class="custom-select-option" data-value="weeks">Weeks</div>
+                                    <div class="custom-select-option" data-value="months">Months</div>
+                                    <div class="custom-select-option" data-value="years">Years</div>
+                                </div>
+                                <input type="hidden" id="event-duration-unit" value="minutes">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row" id="task-details-row">
+                    <div class="form-group id-task-only">
+                        <label>Priority</label>
+                        <div class="custom-select-wrapper open-upward" id="priority-wrapper">
+                            <div class="custom-select-display" id="priority-display">
+                                <i class="fa-solid fa-flag" style="color: #FFA940;"></i> Medium
+                            </div>
+                            <div class="custom-select-options" id="priority-options">
+                                <div class="custom-select-option" data-value="high"><i class="fa-solid fa-flag"
+                                        style="color: #FF4D4F;"></i> High</div>
+                                <div class="custom-select-option" data-value="medium"><i class="fa-solid fa-flag"
+                                        style="color: #FFA940;"></i> Medium</div>
+                                <div class="custom-select-option" data-value="low"><i class="fa-solid fa-flag"
+                                        style="color: #2F7BF6;"></i> Low</div>
+                            </div>
+                            <input type="hidden" id="task-priority" value="medium">
+                        </div>
+                    </div>
+
+                    <div class="form-group" id="frequency-container">
+                        <label>Repetition</label>
+                        <div class="custom-select-wrapper open-upward" id="frequency-wrapper">
+                            <div class="custom-select-display" id="frequency-display">
+                                No Repeat <i class="fa-solid fa-chevron-down caret-icon"></i>
+                            </div>
+                            <div class="custom-select-options" id="frequency-options">
+                                <div class="custom-select-option" data-value="none">No Repeat</div>
+                                <div class="custom-select-option" data-value="daily">Daily</div>
+                                <div class="custom-select-option" data-value="weekly">Weekly</div>
+                                <div class="custom-select-option" data-value="monthly">Monthly</div>
+                                <div class="custom-select-option" data-value="yearly">Yearly</div>
+                                <div class="custom-select-option" data-value="custom">Custom</div>
+                            </div>
+                            <input type="hidden" id="item-frequency" value="none">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="custom-bg" id="custom-freq-row" style="display:none; padding: 16px; border-radius: 16px;">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Repeat every</label>
+                            <div style="display:flex; gap:8px;">
+                                <input type="number" id="custom-freq-num" min="1" value="1" style="width: 70px;">
+                                <div class="custom-select-wrapper open-upward" id="custom-freq-unit-wrapper"
+                                    style="flex-grow: 1;">
+                                    <div class="custom-select-display" id="custom-freq-unit-display"
+                                        style="padding-top: 9px; padding-bottom: 9px;">
+                                        Days <i class="fa-solid fa-chevron-down caret-icon"></i>
+                                    </div>
+                                    <div class="custom-select-options" id="custom-freq-unit-options">
+                                        <div class="custom-select-option" data-value="days">Days</div>
+                                        <div class="custom-select-option" data-value="weeks">Weeks</div>
+                                        <div class="custom-select-option" data-value="months">Months</div>
+                                    </div>
+                                    <input type="hidden" id="custom-freq-unit" value="days">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Times a day</label>
+                            <input type="number" id="times-per-day" min="1" value="1">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="custom-bg" id="specific-days-row"
+                    style="display:none; padding: 0px 16px; border-radius: 16px; margin-bottom: 16px;">
+                    <label>Select Days</label>
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px;">
+                        <label class="day-toggle"><input type="checkbox" value="0"><span>Su</span></label>
+                        <label class="day-toggle"><input type="checkbox" value="1"><span>Mo</span></label>
+                        <label class="day-toggle"><input type="checkbox" value="2"><span>Tu</span></label>
+                        <label class="day-toggle"><input type="checkbox" value="3"><span>We</span></label>
+                        <label class="day-toggle"><input type="checkbox" value="4"><span>Th</span></label>
+                        <label class="day-toggle"><input type="checkbox" value="5"><span>Fr</span></label>
+                        <label class="day-toggle"><input type="checkbox" value="6"><span>Sa</span></label>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 12px; margin-top: 16px;">
+                    <button type="submit" id="submit-btn" class="btn btn-primary btn-block">Save</button>
+                    <button type="button" id="modal-delete-btn" class="btn btn-delete btn-block"
+                        style="display:none; background: #FF4D4F; color: white;">Delete</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="details-modal" class="modal" style="z-index: 1008;">
+        <div class="modal-content" style="max-width: 500px;">
+            <div class="modal-header"
+                style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 16px;">
+                <h3 id="details-modal-title"
+                    style="font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 8px; color: var(--text-main);">
+                    Details</h3>
+                <button id="close-details-modal" class="close-btn"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div id="details-modal-body"
+                style="display: flex; flex-direction: column; gap: 16px; font-size: 14.5px; color: var(--text-main); max-height: 55vh; overflow-y: auto; padding-right: 4px;">
+                <!-- Content generated dynamically in app.js -->
+            </div>
+            <div id="details-modal-actions"
+                style="display: flex; margin-top: 24px; border-top: 1px solid var(--border-color); padding-top: 16px; align-items: center; justify-content: flex-end; width: 100%;">
+                <div class="details-actions-desktop" id="details-actions-desktop">
+                    <!-- Buttons generated dynamically for desktop -->
+                </div>
+                <div class="details-actions-mobile" id="details-actions-mobile">
+                    <button type="button" class="details-kebab-btn" id="details-kebab-btn"><i
+                            class="fa-solid fa-ellipsis-vertical"></i></button>
+                    <div class="details-kebab-menu" id="details-kebab-menu">
+                        <!-- Options generated dynamically for mobile -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="confirm-modal" class="modal" style="z-index: 1020;">
+        <div class="modal-content" style="max-width: 350px; text-align: center;">
+            <div style="font-size: 40px; color: #FF4D4F; margin-bottom: 10px;"><i
+                    class="fa-solid fa-triangle-exclamation"></i></div>
+            <h3 style="margin-bottom: 10px;">Are you sure?</h3>
+            <p id="confirm-message" style="margin-bottom: 25px; color: var(--text-muted); font-size: 14px;"></p>
+            <div style="display: flex; gap: 12px; justify-content: center;">
+                <button id="confirm-no" class="btn btn-secondary">Cancel</button>
+                <button id="confirm-yes" class="btn btn-primary" style="background: #FF4D4F;">Yes, Proceed</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="js/app.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then((reg) => {
+                    console.log('[FlowTick SW] Registered successfully with scope:', reg.scope);
+                }).catch((err) => {
+                    console.error('[FlowTick SW] Registration failed:', err);
+                });
+            });
+        }
+    </script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, doc, updateDoc, getDocs, deleteDoc, getDoc, query, where } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // استدعاء مكتبة المصادقة (Authentication) كاملة
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, updatePassword, EmailAuthProvider, reauthenticateWithCredential, updateProfile } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCGU9sUd4lj8_vdStcBd_DtYauvktlEKeA",
+            authDomain: "personal-information-man-b9476.firebaseapp.com",
+            projectId: "personal-information-man-b9476",
+            storageBucket: "personal-information-man-b9476.firebasestorage.app",
+            messagingSenderId: "586841086624",
+            appId: "1:586841086624:web:84f0f65944e53ba98747c5"
+        };
+
+        const app = initializeApp(firebaseConfig);
+
+        window.db = getFirestore(app);
+        window.collection = collection;
+        window.addDoc = addDoc;
+        window.doc = doc;
+        window.updateDoc = updateDoc;
+        window.getDocs = getDocs;
+        window.deleteDoc = deleteDoc;
+        window.getDoc = getDoc;
+        window.query = query;
+        window.where = where;
+
+        // تهيئة المصادقة وتصدير دوالها لملف app.js
+        window.auth = getAuth(app);
+        window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
+        window.signInWithEmailAndPassword = signInWithEmailAndPassword;
+        window.signOut = signOut;
+        window.onAuthStateChanged = onAuthStateChanged;
+
+        // الدوال الجديدة الخاصة بكلمة المرور والملف الشخصي
+        window.sendPasswordResetEmail = sendPasswordResetEmail;
+        window.updatePassword = updatePassword;
+        window.EmailAuthProvider = EmailAuthProvider;
+        window.reauthenticateWithCredential = reauthenticateWithCredential;
+        window.updateProfile = updateProfile;
+    </script>
+</body>
+
+</html>

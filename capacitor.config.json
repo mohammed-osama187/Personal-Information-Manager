@@ -1,0 +1,6 @@
+{
+  "appId": "com.flowtick.app",
+  "appName": "FlowTick",
+  "webDir": "build",
+  "bundledWebRuntime": false
+}

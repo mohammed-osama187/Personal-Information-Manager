@@ -1,0 +1,17 @@
+{
+    "name": "FlowTick",
+    "short_name": "FlowTick",
+    "start_url": "./index.html",
+    "display": "standalone",
+    "background_color": "#F7F7F5",
+    "theme_color": "#2F7BF6",
+    "orientation": "portrait-primary",
+    "icons": [
+        {
+            "src": "logo1.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
+}

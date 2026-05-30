@@ -1004,7 +1004,7 @@ window.scheduleMobileNotification = function(id, title, body, triggerTime) {
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
         // 1. Force Android to register the custom sound channel
         window.Capacitor.Plugins.LocalNotifications.createChannel({
-            id: 'flowtick-alerts',
+            id: 'flowtick-alerts-v2',
             name: 'FlowTick Alerts',
             importance: 5,
             sound: 'pomodoro.mp3', // Matches the file we put in the raw folder
@@ -1018,7 +1018,7 @@ window.scheduleMobileNotification = function(id, title, body, triggerTime) {
                     body: body,
                     schedule: { at: new Date(triggerTime), allowWhileIdle: true }, // Crucial for background firing
                     sound: 'pomodoro.mp3',
-                    channelId: 'flowtick-alerts',
+                    channelId: 'flowtick-alerts-v2',
                     actionTypeId: '',
                     extra: null
                 }]

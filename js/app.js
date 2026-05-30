@@ -978,11 +978,11 @@ function initMissedNotificationsUI() {
                     // Register the native Android audio channel for premium custom sounds
                     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
                         window.Capacitor.Plugins.LocalNotifications.createChannel({
-                            id: 'flowtick-custom-alerts-v3',
+                            id: 'flowtick-custom-alerts-v4',
                             name: 'FlowTick Alerts',
                             description: 'Reminders with custom sound',
                             importance: 5, // 5 = High importance (Required to play sounds and pop up)
-                            sound: 'success', // Matches the raw resource name without extension
+                            sound: 'success.mp3', // Matches raw folder resource with extension
                             visibility: 1
                         });
                     }
@@ -1020,10 +1020,10 @@ window.scheduleMobileNotification = function(id, title, body, triggerTime) {
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
         // 1. Force Android to register the custom sound channel
         window.Capacitor.Plugins.LocalNotifications.createChannel({
-            id: 'flowtick-alerts-v3', // Updated to v3 to force creation of new channel with correct settings
+            id: 'flowtick-alerts-v4', // Updated to v4 to force creation of new channel with correct settings
             name: 'FlowTick Alerts',
             importance: 5,
-            sound: 'success', // Reference raw resource without extension
+            sound: 'success.mp3', // Matches raw folder resource with extension
             visibility: 1
         }).then(() => {
             // 2. Schedule the notification to bypass Doze mode
@@ -1033,8 +1033,8 @@ window.scheduleMobileNotification = function(id, title, body, triggerTime) {
                     title: title,
                     body: body,
                     schedule: { at: new Date(triggerTime), allowWhileIdle: true },
-                    sound: 'success', // Reference raw resource without extension
-                    channelId: 'flowtick-alerts-v3',
+                    sound: 'success.mp3', // Matches raw folder resource with extension
+                    channelId: 'flowtick-alerts-v4',
                     ongoing: false,       // False so normal task reminders can be swiped away successfully
                     autoCancel: true,     // True so clicking dismisses them and they can be swiped away
                     foreground: true,     // Forces the notification to appear even if the app is open
@@ -1100,6 +1100,13 @@ window.cancelMobileNotification = function(id) {
         window.Capacitor.Plugins.LocalNotifications.requestPermissions().then(result => {
             console.log('[NativeBridge] Native notification permissions:', result);
         });
+
+        // 2. Clear any delivered notifications on launch to dismiss old un-erasable alerts
+        try {
+            window.Capacitor.Plugins.LocalNotifications.removeAllDeliveredNotifications();
+        } catch(e) {
+            console.error('[NativeBridge] Error clearing delivered notifications:', e);
+        }
 
         function handleNotificationAction(notifId) {
             if (!notifId) return;

@@ -635,7 +635,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const initialLayout = localStorage.getItem('dashboardLayout') || 'list';
     setDashboardLayout(initialLayout);
     initSettings();
-    initOfflineNotifications(); 
     initMissedNotificationsUI(); 
     requestBatteryOptimization(); 
 
@@ -680,6 +679,89 @@ function parseLocalISOString(dateStr, timeStr) {
     const [h, min] = (timeStr || '00:00').split(':').map(Number);
     return new Date(y, m - 1, d, h, min, 0);
 }
+
+function getNextOccurrenceTime(startDateStr, startTimeStr, frequency, specificDays, customNum, customUnit) {
+    let triggerTime = parseLocalISOString(startDateStr, startTimeStr || '09:00');
+    if (!triggerTime) return null;
+
+    const now = new Date();
+    if (triggerTime > now) {
+        return triggerTime;
+    }
+
+    let maxIterations = 1000;
+    let iterations = 0;
+
+    if (frequency === 'daily') {
+        while (triggerTime <= now && iterations < maxIterations) {
+            triggerTime.setDate(triggerTime.getDate() + 1);
+            iterations++;
+        }
+    } else if (frequency === 'weekly') {
+        while (triggerTime <= now && iterations < maxIterations) {
+            triggerTime.setDate(triggerTime.getDate() + 7);
+            iterations++;
+        }
+    } else if (frequency === 'monthly') {
+        while (triggerTime <= now && iterations < maxIterations) {
+            triggerTime.setMonth(triggerTime.getMonth() + 1);
+            iterations++;
+        }
+    } else if (frequency === 'yearly') {
+        while (triggerTime <= now && iterations < maxIterations) {
+            triggerTime.setFullYear(triggerTime.getFullYear() + 1);
+            iterations++;
+        }
+    } else if (frequency === 'custom') {
+        const num = customNum || 1;
+        const unit = customUnit || 'days';
+        while (triggerTime <= now && iterations < maxIterations) {
+            if (unit === 'days') {
+                triggerTime.setDate(triggerTime.getDate() + num);
+            } else if (unit === 'weeks') {
+                if (specificDays && specificDays.length > 0) {
+                    let foundNext = false;
+                    for (let dayOffset = 1; dayOffset < 365; dayOffset++) {
+                        let testTime = new Date(triggerTime.getTime());
+                        testTime.setDate(testTime.getDate() + dayOffset);
+                        if (specificDays.includes(testTime.getDay()) && testTime > now) {
+                            triggerTime = testTime;
+                            foundNext = true;
+                            break;
+                        }
+                    }
+                    if (!foundNext) {
+                        triggerTime.setDate(triggerTime.getDate() + num * 7);
+                    }
+                } else {
+                    triggerTime.setDate(triggerTime.getDate() + num * 7);
+                }
+            } else if (unit === 'months') {
+                triggerTime.setMonth(triggerTime.getMonth() + num);
+            } else if (unit === 'years') {
+                triggerTime.setFullYear(triggerTime.getFullYear() + num);
+            }
+            iterations++;
+        }
+    } else if (specificDays && specificDays.length > 0) {
+        let foundNext = false;
+        for (let dayOffset = 1; dayOffset < 365; dayOffset++) {
+            let testTime = new Date(triggerTime.getTime());
+            testTime.setDate(testTime.getDate() + dayOffset);
+            if (specificDays.includes(testTime.getDay()) && testTime > now) {
+                triggerTime = testTime;
+                foundNext = true;
+                break;
+            }
+        }
+        if (!foundNext) {
+            triggerTime.setDate(triggerTime.getDate() + 1);
+        }
+    }
+
+    return triggerTime;
+}
+
 
 function checkIfDashboardNeedsUpdate() {
     if (!window.activeTasksList || window.activeTasksList.length === 0) return false;
@@ -741,86 +823,7 @@ function fireWebNotification(title, bodyText) {
     }
 }
 
-function initOfflineNotifications() {
-    if ("Notification" in window && Notification.permission !== "granted" && Notification.permission !== "denied") {
-        Notification.requestPermission();
-    }
 
-    // Checking every 1 second using pre-calculated numeric timestamps (highly efficient!)
-    setInterval(() => {
-        const nowMs = Date.now();
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        const currentDate = `${year}-${month}-${day}`;
-        const currentDayOfWeek = now.getDay(); // 0 (Sun) - 6 (Sat)
-
-        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-        const currentUserId = currentUser ? currentUser.id : 'guest';
-
-        const items = (window.allActiveItemsList || []).filter(item => 
-            item.userId === currentUserId && 
-            !item.isCompleted && 
-            !item.isCancelled
-        );
-        
-        items.forEach(item => {
-            // 1. Check if the task is overdue using pre-calculated dueTimeMs
-            if (item.dueTimeMs && nowMs >= item.dueTimeMs && !item.lastNotifiedOverdue) {
-                item.lastNotifiedOverdue = true;
-                saveTaskToFirebase(item).then(() => {
-                    displayTasks();
-                });
-
-                // Only trigger web notifications/sounds if we are NOT on a Capacitor wrapper (which has native OS local scheduling!)
-                if (!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications)) {
-                    showToast(`Overdue: ${item.title}`, 'error', true);
-                    playSound('error');
-                    fireWebNotification("Task Overdue!", `The deadline for "${item.title}" has passed.`);
-                }
-
-                // Add to missed notifications queue (in-app notifications panel)
-                addMissedNotification(`Overdue: ${item.title}`, item.dueTime || '23:59', 'overdue');
-            }
-
-            // 2. Regular startTime schedule reminders check using pre-calculated triggerTimeMs
-            if (item.lastNotifiedDate === currentDate) return; // Already notified today
-            
-            if (item.triggerTimeMs && nowMs >= item.triggerTimeMs) {
-                let shouldNotify = false;
-
-                if (item.type === 'task') {
-                    if (item.startDate === currentDate) shouldNotify = true;
-                    // Check repeats
-                    else if (item.frequency === 'daily') shouldNotify = true;
-                    else if (item.frequency === 'specific_days' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
-                } else if (item.type === 'habit') {
-                    if (item.frequency === 'daily') shouldNotify = true;
-                    else if (item.frequency === 'specific_days' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
-                }
-
-                if (shouldNotify) {
-                    // Write to Firestore instantly to prevent duplicate reminders in subsequent checks
-                    item.lastNotifiedDate = currentDate;
-                    saveTaskToFirebase(item).then(() => {
-                        displayTasks();
-                    });
-
-                    // Only trigger web notifications/sounds if we are NOT on a Capacitor wrapper (which has native OS local scheduling!)
-                    if (!(window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications)) {
-                        showToast(`Reminder: ${item.title}`, 'info', true);
-                        playSound('success');
-                        fireWebNotification("Task Reminder", `It's time for: ${item.title}`);
-                    }
-
-                    // Add to missed notifications queue (in-app notifications panel)
-                    addMissedNotification(item.title, item.startTime, 'reminder');
-                }
-            }
-        });
-    }, 1000); // Check every 1 second with 0 overhead!
-}
 
 // ==========================================
 // NEW: Missed Notifications Manager
@@ -1009,17 +1012,38 @@ function initMissedNotificationsUI() {
 // ==========================================
 // Unified Mobile Wrapper Notification Bridge
 // ==========================================
-window.scheduleMobileNotification = function(id, title, body, triggerTime) {
+window.scheduleMobileNotification = function(id, title, body, triggerTime, frequency, soundName) {
     const delayMs = new Date(triggerTime).getTime() - Date.now();
-    if (delayMs <= 0) return;
+    // For repeating notifications, start scheduling even if triggerTime is in the past (repeats will adjust)
+    if (delayMs <= 0 && !frequency) return;
 
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+        // Build native repeating/one-shot schedule options
+        const scheduleOpts = { at: new Date(triggerTime), allowWhileIdle: true };
+        if (frequency === 'daily') {
+            scheduleOpts.repeats = true;
+            scheduleOpts.every = 'day';
+        } else if (frequency === 'weekly') {
+            scheduleOpts.repeats = true;
+            scheduleOpts.every = 'week';
+        } else if (frequency === 'monthly') {
+            scheduleOpts.repeats = true;
+            scheduleOpts.every = 'month';
+        } else if (frequency === 'yearly') {
+            scheduleOpts.repeats = true;
+            scheduleOpts.every = 'year';
+        }
+
+        const sound = soundName || 'success.mp3';
+        const soundBase = sound.replace('.mp3', '');
+        const channelId = `flowtick-${soundBase}-channel-v5`;
+
         // 1. Force Android to register the custom sound channel
         window.Capacitor.Plugins.LocalNotifications.createChannel({
-            id: 'flowtick-alerts-v4', // Updated to v4 to force creation of new channel with correct settings
-            name: 'FlowTick Alerts',
+            id: channelId,
+            name: `FlowTick ${soundBase.charAt(0).toUpperCase() + soundBase.slice(1)} Alerts`,
             importance: 5,
-            sound: 'success.mp3', // Matches raw folder resource with extension
+            sound: sound, // Matches raw folder resource with extension
             visibility: 1
         }).then(() => {
             // 2. Schedule the notification to bypass Doze mode
@@ -1028,9 +1052,9 @@ window.scheduleMobileNotification = function(id, title, body, triggerTime) {
                     id: Math.abs(parseInt(id)) || Math.floor(Math.random() * 1000000),
                     title: title,
                     body: body,
-                    schedule: { at: new Date(triggerTime), allowWhileIdle: true },
-                    sound: 'success.mp3', // Matches raw folder resource with extension
-                    channelId: 'flowtick-alerts-v4',
+                    schedule: scheduleOpts,
+                    sound: sound, // Matches raw folder resource with extension
+                    channelId: channelId,
                     ongoing: false,       // False so normal task reminders can be swiped away successfully
                     autoCancel: true,     // True so clicking dismisses them and they can be swiped away
                     foreground: true,     // Forces the notification to appear even if the app is open
@@ -1155,38 +1179,84 @@ window.cancelMobileNotification = function(id) {
 })();
 
 window.scheduleItemNotifications = function(item) {
-    if (!item || item.isCompleted || item.isCancelled || item.isDeleted) {
-        if (item && item.id) {
-            cancelMobileNotification(item.id);
-            cancelMobileNotification(item.id + '_due');
-        }
-        return;
+    if (!item) return;
+
+    // 1. Convert alphanumeric Firestore IDs to numeric ones for native Android Capacitor support
+    const numericId = String(item.id).replace(/[^0-9]/g, '').slice(0, 8) || '0';
+    const dueNumericId = (String(item.id).replace(/[^0-9]/g, '').slice(0, 7) || '0') + '2';
+
+    // 2. Always cancel the previous scheduled native alarms before creating new ones
+    // This prevents stale/duplicate notifications perfectly
+    if (window.cancelMobileNotification) {
+        window.cancelMobileNotification(numericId);
+        window.cancelMobileNotification(dueNumericId);
     }
 
-    if (item.startDate) {
-        // 1. Schedule start reminder
-        if (item.startTime) {
-            const triggerTime = parseLocalISOString(item.startDate, item.startTime);
-            if (triggerTime && triggerTime > new Date()) {
-                const numericId = String(item.id).replace(/[^0-9]/g, '').slice(0, 8) || Math.floor(Math.random() * 1000000);
-                scheduleMobileNotification(
+    if (item.isCancelled || item.isDeleted) return;
+
+    const isRepeating = (item.type === 'habit' || (item.frequency && item.frequency !== 'none'));
+    if (item.isCompleted && !isRepeating) return;
+
+    // 3. Delegate scheduling entirely to Android OS AlarmManager via Capacitor Plugin
+    if (item.startDate && item.startTime) {
+        let triggerTime;
+        if (isRepeating) {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const todayStr = `${year}-${month}-${day}`;
+            
+            const isCompletedToday = item.isCompleted || (item.completedDates && item.completedDates.includes(todayStr));
+            let startFromDate = item.startDate;
+            if (isCompletedToday) {
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                const ty = tomorrow.getFullYear();
+                const tm = String(tomorrow.getMonth() + 1).padStart(2, '0');
+                const td = String(tomorrow.getDate()).padStart(2, '0');
+                startFromDate = `${ty}-${tm}-${td}`;
+            }
+            triggerTime = getNextOccurrenceTime(startFromDate, item.startTime, item.frequency, item.specificDays, item.customNum, item.customUnit);
+        } else {
+            triggerTime = parseLocalISOString(item.startDate, item.startTime);
+        }
+
+        if (triggerTime && triggerTime > new Date()) {
+            let notifTitle = 'Task Reminder';
+            let notifBody = `It's time for: ${item.title}`;
+            if (item.type === 'event') {
+                notifTitle = 'Event Reminder';
+                notifBody = `Event starting: ${item.title}`;
+            } else if (item.type === 'habit') {
+                notifTitle = 'Habit Reminder';
+                notifBody = `Time for your habit: ${item.title}`;
+            }
+
+            if (window.scheduleMobileNotification) {
+                window.scheduleMobileNotification(
                     numericId,
-                    'Task Reminder',
-                    `It's time for: ${item.title}`,
-                    triggerTime
+                    notifTitle,
+                    notifBody,
+                    triggerTime,
+                    item.frequency,
+                    'success.mp3'
                 );
             }
         }
-        // 2. Schedule due deadline reminder
-        if (item.dueDate && item.dueTime) {
-            const triggerTime = parseLocalISOString(item.dueDate, item.dueTime);
-            if (triggerTime && triggerTime > new Date()) {
-                const numericId = (String(item.id).replace(/[^0-9]/g, '').slice(0, 7) || Math.floor(Math.random() * 500000)) + '2';
-                scheduleMobileNotification(
-                    numericId,
+    }
+
+    if (item.dueDate && item.dueTime) {
+        const triggerTime = parseLocalISOString(item.dueDate, item.dueTime);
+        if (triggerTime && triggerTime > new Date()) {
+            if (window.scheduleMobileNotification) {
+                window.scheduleMobileNotification(
+                    dueNumericId,
                     'Task Overdue!',
                     `The deadline for "${item.title}" has passed.`,
-                    triggerTime
+                    triggerTime,
+                    null,
+                    'success.mp3'
                 );
             }
         }
@@ -2250,9 +2320,17 @@ function displayTasks() {
 
         // Store active tasks globally for live ticking
         window.activeTasksList = tasks.filter(t => !t.isCompleted && !t.isCancelled).sort((a, b) => b.createdAt - a.createdAt);
-        window.allActiveItemsList = items.filter(t => !t.isCompleted && !t.isCancelled && !t.isDeleted);
+        window.allActiveItemsList = items.filter(t => (!t.isCompleted || t.type === 'habit' || (t.frequency && t.frequency !== 'none')) && !t.isCancelled && !t.isDeleted);
         
-        // Pre-calculate trigger timestamps once to keep the 1-second checker loop extremely fast and prevent GC spikes
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const todayStr = `${year}-${month}-${day}`;
+        const currentDayOfWeek = now.getDay();
+        const nowMs = Date.now();
+
+        // Pre-calculate trigger timestamps once to keep the check loop extremely fast and prevent GC spikes
         window.allActiveItemsList.forEach(item => {
             if (item.startDate && item.startTime) {
                 const trig = parseLocalISOString(item.startDate, item.startTime);
@@ -2267,20 +2345,47 @@ function displayTasks() {
             } else {
                 item.dueTimeMs = null;
             }
+
+            // SILENT IN-APP SYNC (No background loops!):
+            // Check if task trigger time or due time has hit and update state/in-app panel once on load
+            if (item.dueTimeMs && nowMs >= item.dueTimeMs && !item.lastNotifiedOverdue) {
+                item.lastNotifiedOverdue = true;
+                saveTaskToFirebase(item);
+                addMissedNotification(`Overdue: ${item.title}`, item.dueTime || '23:59', 'overdue');
+            }
+            if (item.lastNotifiedDate !== todayStr) {
+                let shouldNotify = false;
+                const isTaskOrEvent = (item.type === 'task' || item.type === 'event' || !item.type);
+                const isHabit = (item.type === 'habit');
+                
+                if (isTaskOrEvent) {
+                    if (item.startDate === todayStr) shouldNotify = true;
+                    else if (item.frequency === 'daily') shouldNotify = true;
+                    else if (item.frequency === 'specific_days' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
+                    else if (item.frequency === 'custom' && item.customUnit === 'weeks' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
+                } else if (isHabit) {
+                    if (item.frequency === 'daily') shouldNotify = true;
+                    else if (item.frequency === 'specific_days' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
+                    else if (item.frequency === 'custom' && item.customUnit === 'weeks' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
+                }
+
+                if (shouldNotify) {
+                    const todayTrig = parseLocalISOString(todayStr, item.startTime || '09:00');
+                    if (todayTrig && nowMs >= todayTrig.getTime()) {
+                        item.lastNotifiedDate = todayStr;
+                        saveTaskToFirebase(item);
+                        addMissedNotification(item.title, item.startTime, 'reminder');
+                    }
+                }
+            }
         });
-        
-        // Sync local notification schedules on mobile WebView wrapper devices
+
+        // Sync local notification schedules on mobile WebView wrapper devices on launch/reload
         if (window.scheduleItemNotifications) {
             window.allActiveItemsList.forEach(item => {
                 window.scheduleItemNotifications(item);
             });
         }
-        
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        const todayStr = `${year}-${month}-${day}`;
 
         habits.forEach(h => {
             h.isCompleted = !!(h.completedDates && h.completedDates.includes(todayStr));
@@ -3411,14 +3516,18 @@ function initPomodoroDrag() {
                             999991,
                             'Focus Session Finished!',
                             'Great focus! Time for a short break.',
-                            Date.now() + 100
+                            Date.now() + 100,
+                            null,
+                            'pomodoro.mp3'
                         );
                         // 2. Schedule future native alarm for the end of the Break session
                         window.scheduleMobileNotification(
                             999993,
                             'Break Time Finished!',
                             'Break over! Ready to focus on the next task?',
-                            nextEnd
+                            nextEnd,
+                            null,
+                            'pomodoro.mp3'
                         );
                     }
                     updateTimeDisplay();
@@ -3439,7 +3548,9 @@ function initPomodoroDrag() {
                             999992,
                             'Break Time Finished!',
                             'Break over! Ready to focus on the next task?',
-                            Date.now() + 100
+                            Date.now() + 100,
+                            null,
+                            'pomodoro.mp3'
                         );
                     }
                     updateKnobByMinutes(sessionMinutes);
@@ -3478,7 +3589,9 @@ function initPomodoroDrag() {
                     999993,
                     isWorkSession ? 'Focus Session Finished!' : 'Break Time Finished!',
                     isWorkSession ? 'Great focus! Time for a short break.' : 'Break over! Ready to focus on the next task?',
-                    expectedEnd
+                    expectedEnd,
+                    null,
+                    'pomodoro.mp3'
                 );
             }
 
@@ -3511,3 +3624,63 @@ function initPomodoroDrag() {
 
     updateKnobByMinutes(25);
 }
+
+// Start a lightweight foreground checker for task/habit/event start times and deadlines
+(function() {
+    setInterval(() => {
+        if (!window.allActiveItemsList) return;
+        const nowMs = Date.now();
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const todayStr = `${year}-${month}-${day}`;
+        const currentDayOfWeek = now.getDay();
+        let changed = false;
+
+        window.allActiveItemsList.forEach(item => {
+            if (item.isCompleted && item.type !== 'habit' && !(item.frequency && item.frequency !== 'none')) return;
+            if (item.isCancelled || item.isDeleted) return;
+
+            // 1. Check if it became overdue while the app is in the foreground
+            if (item.dueTimeMs && nowMs >= item.dueTimeMs && !item.lastNotifiedOverdue) {
+                item.lastNotifiedOverdue = true;
+                saveTaskToFirebase(item);
+                addMissedNotification(`Overdue: ${item.title}`, item.dueTime || '23:59', 'overdue');
+                changed = true;
+            }
+
+            // 2. Check if the start time just hit
+            if (item.lastNotifiedDate !== todayStr) {
+                let shouldNotify = false;
+                const isTaskOrEvent = (item.type === 'task' || item.type === 'event' || !item.type);
+                const isHabit = (item.type === 'habit');
+                
+                if (isTaskOrEvent) {
+                    if (item.startDate === todayStr) shouldNotify = true;
+                    else if (item.frequency === 'daily') shouldNotify = true;
+                    else if (item.frequency === 'specific_days' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
+                    else if (item.frequency === 'custom' && item.customUnit === 'weeks' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
+                } else if (isHabit) {
+                    if (item.frequency === 'daily') shouldNotify = true;
+                    else if (item.frequency === 'specific_days' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
+                    else if (item.frequency === 'custom' && item.customUnit === 'weeks' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
+                }
+
+                if (shouldNotify) {
+                    const todayTrig = parseLocalISOString(todayStr, item.startTime || '09:00');
+                    if (todayTrig && nowMs >= todayTrig.getTime()) {
+                        item.lastNotifiedDate = todayStr;
+                        saveTaskToFirebase(item);
+                        addMissedNotification(item.title, item.startTime, 'reminder');
+                        changed = true;
+                    }
+                }
+            }
+        });
+
+        if (changed) {
+            displayTasks();
+        }
+    }, 5000); // Check every 5 seconds in foreground
+})();

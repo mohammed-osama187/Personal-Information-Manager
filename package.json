@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@capacitor/android": "^8.3.4",
+    "@capacitor/background-runner": "^3.0.0",
     "@capacitor/cli": "^8.3.4",
     "@capacitor/core": "^8.3.4",
     "@capacitor/local-notifications": "^8.2.0"

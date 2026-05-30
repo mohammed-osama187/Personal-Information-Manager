@@ -637,6 +637,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initSettings();
     initOfflineNotifications(); 
     initMissedNotificationsUI(); 
+    requestBatteryOptimization(); 
 
     // Live Dynamic Dashboard Categorizer ticker running every 1 minute for premium resource efficiency
     setInterval(() => {
@@ -645,6 +646,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 60000);
 });
+
+async function requestBatteryOptimization() {
+    if (window.Capacitor && typeof window.Capacitor.getPlatform === 'function' && window.Capacitor.getPlatform() === 'android') {
+        const prompted = localStorage.getItem('battery_prompted');
+        if (!prompted) {
+            localStorage.setItem('battery_prompted', 'true');
+            // This will open the specific system settings page for your app
+            // so the user can manually select "Unrestricted"
+            // await window.Capacitor.Plugins.App.exitApp(); // Optional: Redirect or prompt
+            window.location.href = "intent://#Intent;action=android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS;end";
+        }
+    }
+}
 
 // ==========================================
 // NEW: Instant Notification Engine
@@ -962,11 +976,11 @@ function initMissedNotificationsUI() {
                     // Register the native Android audio channel for premium custom sounds
                     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
                         window.Capacitor.Plugins.LocalNotifications.createChannel({
-                            id: 'flowtick-custom-alerts',
+                            id: 'flowtick-custom-alerts-v3',
                             name: 'FlowTick Alerts',
                             description: 'Reminders with custom sound',
                             importance: 5, // 5 = High importance (Required to play sounds and pop up)
-                            sound: 'success.mp3', // Must match the exact filename in raw folder
+                            sound: 'success', // Matches the raw resource name without extension
                             visibility: 1
                         });
                     }
@@ -1004,24 +1018,24 @@ window.scheduleMobileNotification = function(id, title, body, triggerTime) {
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
         // 1. Force Android to register the custom sound channel
         window.Capacitor.Plugins.LocalNotifications.createChannel({
-            id: 'flowtick-alerts-v2',
+            id: 'flowtick-alerts-v3', // Updated to v3 to force creation of new channel with correct settings
             name: 'FlowTick Alerts',
             importance: 5,
-            sound: 'pomodoro.mp3', // Matches the file we put in the raw folder
+            sound: 'success', // Reference raw resource without extension
             visibility: 1
         }).then(() => {
             // 2. Schedule the notification to bypass Doze mode
-            const isOngoing = (String(id) === '999999');
             window.Capacitor.Plugins.LocalNotifications.schedule({
                 notifications: [{
                     id: Math.abs(parseInt(id)) || Math.floor(Math.random() * 1000000),
                     title: title,
                     body: body,
-                    schedule: { at: new Date(triggerTime), allowWhileIdle: true }, // Crucial for background firing
-                    sound: 'pomodoro.mp3',
-                    channelId: 'flowtick-alerts-v2',
-                    ongoing: isOngoing,
-                    autoCancel: !isOngoing,
+                    schedule: { at: new Date(triggerTime), allowWhileIdle: true },
+                    sound: 'success', // Reference raw resource without extension
+                    channelId: 'flowtick-alerts-v3',
+                    ongoing: true,        // <--- This prevents the user from accidentally swiping it away
+                    autoCancel: false,    // <--- Keeps the notification in the tray until you manually dismiss it
+                    foreground: true,     // <--- Forces the notification to appear even if the app is open
                     actionTypeId: '',
                     extra: null
                 }]
@@ -1030,6 +1044,32 @@ window.scheduleMobileNotification = function(id, title, body, triggerTime) {
         return;
     }
     console.log(`[MobileBridge] Web fallback. Delay: ${delayMs}ms`);
+};
+
+window.updateMobileTimerNotification = function(isWork, timeLeft) {
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+        const mins = Math.ceil(timeLeft / 60);
+        // Create a silent, low-priority channel specifically for ticking timer updates
+        window.Capacitor.Plugins.LocalNotifications.createChannel({
+            id: 'flowtick-silent-ticks',
+            name: 'FlowTick Active Timer',
+            importance: 2, // 2 = Low (silent, no sound, no vibration, stays in tray)
+            visibility: 1
+        }).then(() => {
+            window.Capacitor.Plugins.LocalNotifications.schedule({
+                notifications: [{
+                    id: 888888,
+                    title: isWork ? 'Focus Session Active' : 'Break Session Active',
+                    body: `${mins} min remaining...`,
+                    schedule: { at: new Date(Date.now() + 50) },
+                    channelId: 'flowtick-silent-ticks',
+                    ongoing: true,        // Prevents the user from accidentally swiping it away
+                    autoCancel: false,    // Keeps the notification in the tray until cleared
+                    foreground: false      // Silent update
+                }]
+            });
+        });
+    }
 };
 
 window.cancelMobileNotification = function(id) {
@@ -3250,8 +3290,23 @@ function initPomodoroDrag() {
             const remainingMs = parseInt(expectedEnd) - Date.now();
             timeLeft = Math.max(0, Math.ceil(remainingMs / 1000));
             updateTimeDisplay();
+
+            // Dynamic ticking notification update on mobile when minutes remaining changes
+            if (timeLeft > 0 && window.updateMobileTimerNotification) {
+                const mins = Math.ceil(timeLeft / 60);
+                if (typeof window.lastMinutesRemaining === 'undefined' || window.lastMinutesRemaining !== mins) {
+                    window.lastMinutesRemaining = mins;
+                    window.updateMobileTimerNotification(isWorkSession, timeLeft);
+                }
+            }
+
             if (timeLeft <= 0) {
                 playSound('pomodoro');
+                if (window.cancelMobileNotification) {
+                    window.cancelMobileNotification(888888); // Clear silent ticking notification
+                }
+                delete window.lastMinutesRemaining;
+
                 if (isWorkSession) {
                     isWorkSession = false;
                     statusText.innerHTML = '<i class="fa-solid fa-mug-hot"></i> Break';
@@ -3304,7 +3359,9 @@ function initPomodoroDrag() {
             localStorage.removeItem('pomodoro_expected_end');
             if (window.cancelMobileNotification) {
                 window.cancelMobileNotification(999999);
+                window.cancelMobileNotification(888888); // Clear silent ticking notification on pause
             }
+            delete window.lastMinutesRemaining;
         } else {
             isRunning = true;
             btnStart.innerHTML = '<i class="fa-solid fa-pause"></i> Pause';
@@ -3319,6 +3376,13 @@ function initPomodoroDrag() {
                     isWorkSession ? 'Great focus! Time for a short break.' : 'Break over! Ready to focus on the next task?',
                     expectedEnd
                 );
+            }
+
+            // Immediately send the first silent ticking notification
+            if (timeLeft > 0 && window.updateMobileTimerNotification) {
+                const mins = Math.ceil(timeLeft / 60);
+                window.lastMinutesRemaining = mins;
+                window.updateMobileTimerNotification(isWorkSession, timeLeft);
             }
 
             timerInterval = setInterval(() => {
@@ -3338,7 +3402,9 @@ function initPomodoroDrag() {
         localStorage.removeItem('pomodoro_expected_end');
         if (window.cancelMobileNotification) {
             window.cancelMobileNotification(999999);
+            window.cancelMobileNotification(888888); // Clear silent ticking notification on reset
         }
+        delete window.lastMinutesRemaining;
         updateKnobByMinutes(25);
     });
 

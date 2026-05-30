@@ -24,9 +24,9 @@ jobs:
 
       - name: Prepare Web Assets for Capacitor
         run: |
-          mkdir build
+          mkdir -p build
           rsync -av --exclude='build' --exclude='android' --exclude='node_modules' --exclude='.git' --exclude='.github' ./ build/
-
+      
       - name: Sync Capacitor
         run: npx cap sync android
 

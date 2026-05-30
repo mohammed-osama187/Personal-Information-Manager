@@ -1,3 +1,38 @@
+// ==========================================
+// CRITICAL: Pre-register notification channels at the earliest possible moment.
+// This runs before anything else so Android has the channel handles ready
+// before any scheduling calls are made — even on a cold boot click.
+// ==========================================
+if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+    const _ln = window.Capacitor.Plugins.LocalNotifications;
+
+    // Channel for tasks, habits and events (success.mp3)
+    _ln.createChannel({
+        id: 'flowtick-success-channel-v5',
+        name: 'FlowTick Alerts',
+        importance: 5,
+        sound: 'success.mp3',
+        visibility: 1
+    });
+
+    // Channel for Pomodoro focus/break alarms (pomodoro.mp3)
+    _ln.createChannel({
+        id: 'flowtick-pomodoro-channel-v5',
+        name: 'FlowTick Pomodoro',
+        importance: 5,
+        sound: 'pomodoro.mp3',
+        visibility: 1
+    });
+
+    // Silent channel for the live countdown ticker (no sound)
+    _ln.createChannel({
+        id: 'flowtick-silent-ticks',
+        name: 'FlowTick Active Timer',
+        importance: 2,
+        visibility: 1
+    });
+}
+
 // Immediate synchronous routing check to eliminate auth screen page flash
 (function() {
     const currentUser = localStorage.getItem('currentUser');
@@ -1046,17 +1081,19 @@ window.scheduleMobileNotification = function(id, title, body, triggerTime, frequ
             sound: sound, // Matches raw folder resource with extension
             visibility: 1
         }).then(() => {
-            // 2. Schedule the notification to bypass Doze mode
+            // 2. Schedule the notification via Android AlarmManager (fires even when app is killed)
+            const notifId = Math.abs(parseInt(id));
+            if (!notifId) return; // Guard: never schedule with a zero/NaN id
             window.Capacitor.Plugins.LocalNotifications.schedule({
                 notifications: [{
-                    id: Math.abs(parseInt(id)) || Math.floor(Math.random() * 1000000),
+                    id: notifId,
                     title: title,
                     body: body,
                     schedule: scheduleOpts,
-                    sound: sound, // Matches raw folder resource with extension
+                    sound: sound,
                     channelId: channelId,
-                    ongoing: false,       // False so normal task reminders can be swiped away successfully
-                    autoCancel: true,     // True so clicking dismisses them and they can be swiped away
+                    ongoing: true,        // Keeps the notification in the tray until the user acts
+                    autoCancel: false,    // Android does not remove it on tap — user must dismiss it
                     foreground: true,     // Forces the notification to appear even if the app is open
                     actionTypeId: '',
                     extra: null
@@ -1111,6 +1148,15 @@ window.cancelMobileNotification = function(id) {
     }
 };
 
+function getStableNumericId(strId) {
+    if (!strId) return Math.floor(Math.random() * 1000000) + 1;
+    let hash = 0;
+    for (let i = 0; i < strId.length; i++) {
+        hash = strId.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return Math.abs(hash) % 999999 + 1; // Return unique positive integer between 1 and 1,000,000
+}
+
 // ==========================================
 // Native Local Notification Interaction & Permissions setup
 // ==========================================
@@ -1121,7 +1167,22 @@ window.cancelMobileNotification = function(id) {
             console.log('[NativeBridge] Native notification permissions:', result);
         });
 
-        // 2. Clear any delivered notifications on launch to dismiss old un-erasable alerts
+        // 2. Exact Alarm Permission check for Android 14+ setting
+        async function ensureExactAlarmPermission() {
+            try {
+                if (typeof window.Capacitor.Plugins.LocalNotifications.checkExactNotificationSetting === 'function') {
+                    const status = await window.Capacitor.Plugins.LocalNotifications.checkExactNotificationSetting();
+                    if (status && status.granted === false) {
+                        window.location.href = "intent://#Intent;action=android.settings.REQUEST_SCHEDULE_EXACT_ALARM;end";
+                    }
+                }
+            } catch(e) {
+                console.error('[NativeBridge] Error checking exact notification setting:', e);
+            }
+        }
+        ensureExactAlarmPermission();
+
+        // 3. Clear any delivered notifications on launch to dismiss old un-erasable alerts
         try {
             window.Capacitor.Plugins.LocalNotifications.removeAllDeliveredNotifications();
         } catch(e) {
@@ -1139,11 +1200,11 @@ window.cancelMobileNotification = function(id) {
                 return;
             }
 
-            // Find the task in our database
+            // Find the task in our database using stable hashes
             getTasksFromFirebase().then(tasks => {
                 const task = tasks.find(t => {
-                    const numId = String(t.id).replace(/[^0-9]/g, '').slice(0, 8);
-                    const dueNumId = (String(t.id).replace(/[^0-9]/g, '').slice(0, 7) || '0') + '2';
+                    const numId = getStableNumericId(t.id);
+                    const dueNumId = getStableNumericId(t.id + '_due');
                     return String(numId) === String(notifId) || String(dueNumId) === String(notifId);
                 });
 
@@ -1181,9 +1242,9 @@ window.cancelMobileNotification = function(id) {
 window.scheduleItemNotifications = function(item) {
     if (!item) return;
 
-    // 1. Convert alphanumeric Firestore IDs to numeric ones for native Android Capacitor support
-    const numericId = String(item.id).replace(/[^0-9]/g, '').slice(0, 8) || '0';
-    const dueNumericId = (String(item.id).replace(/[^0-9]/g, '').slice(0, 7) || '0') + '2';
+    // 1. Convert alphanumeric Firestore IDs to stable numeric ones for native Android Capacitor support
+    const numericId = getStableNumericId(item.id);
+    const dueNumericId = getStableNumericId(item.id + '_due');
 
     // 2. Always cancel the previous scheduled native alarms before creating new ones
     // This prevents stale/duplicate notifications perfectly
@@ -3625,62 +3686,4 @@ function initPomodoroDrag() {
     updateKnobByMinutes(25);
 }
 
-// Start a lightweight foreground checker for task/habit/event start times and deadlines
-(function() {
-    setInterval(() => {
-        if (!window.allActiveItemsList) return;
-        const nowMs = Date.now();
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        const todayStr = `${year}-${month}-${day}`;
-        const currentDayOfWeek = now.getDay();
-        let changed = false;
-
-        window.allActiveItemsList.forEach(item => {
-            if (item.isCompleted && item.type !== 'habit' && !(item.frequency && item.frequency !== 'none')) return;
-            if (item.isCancelled || item.isDeleted) return;
-
-            // 1. Check if it became overdue while the app is in the foreground
-            if (item.dueTimeMs && nowMs >= item.dueTimeMs && !item.lastNotifiedOverdue) {
-                item.lastNotifiedOverdue = true;
-                saveTaskToFirebase(item);
-                addMissedNotification(`Overdue: ${item.title}`, item.dueTime || '23:59', 'overdue');
-                changed = true;
-            }
-
-            // 2. Check if the start time just hit
-            if (item.lastNotifiedDate !== todayStr) {
-                let shouldNotify = false;
-                const isTaskOrEvent = (item.type === 'task' || item.type === 'event' || !item.type);
-                const isHabit = (item.type === 'habit');
-                
-                if (isTaskOrEvent) {
-                    if (item.startDate === todayStr) shouldNotify = true;
-                    else if (item.frequency === 'daily') shouldNotify = true;
-                    else if (item.frequency === 'specific_days' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
-                    else if (item.frequency === 'custom' && item.customUnit === 'weeks' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
-                } else if (isHabit) {
-                    if (item.frequency === 'daily') shouldNotify = true;
-                    else if (item.frequency === 'specific_days' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
-                    else if (item.frequency === 'custom' && item.customUnit === 'weeks' && item.specificDays && item.specificDays.includes(currentDayOfWeek)) shouldNotify = true;
-                }
-
-                if (shouldNotify) {
-                    const todayTrig = parseLocalISOString(todayStr, item.startTime || '09:00');
-                    if (todayTrig && nowMs >= todayTrig.getTime()) {
-                        item.lastNotifiedDate = todayStr;
-                        saveTaskToFirebase(item);
-                        addMissedNotification(item.title, item.startTime, 'reminder');
-                        changed = true;
-                    }
-                }
-            }
-        });
-
-        if (changed) {
-            displayTasks();
-        }
-    }, 5000); // Check every 5 seconds in foreground
-})();
+// Notifications are scheduled natively via AlarmManager on save/edit — no polling loop needed.

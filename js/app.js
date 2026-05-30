@@ -958,6 +958,18 @@ function initMissedNotificationsUI() {
             Notification.requestPermission().then(permission => {
                 if (permission === 'granted') {
                     showToast('Notifications enabled!', 'success');
+                    
+                    // Register the native Android audio channel for premium custom sounds
+                    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+                        window.Capacitor.Plugins.LocalNotifications.createChannel({
+                            id: 'flowtick-custom-alerts',
+                            name: 'FlowTick Alerts',
+                            description: 'Reminders with custom sound',
+                            importance: 5, // 5 = High importance (Required to play sounds and pop up)
+                            sound: 'success.mp3', // Must match the exact filename in raw folder
+                            visibility: 1
+                        });
+                    }
                 }
             });
         }
@@ -989,46 +1001,32 @@ window.scheduleMobileNotification = function(id, title, body, triggerTime) {
     const delayMs = new Date(triggerTime).getTime() - Date.now();
     if (delayMs <= 0) return;
 
-    // 1. Check for custom Android JavaScript Interface (Standard WebView)
-    if (window.AndroidBridge && typeof window.AndroidBridge.scheduleNotification === 'function') {
-        window.AndroidBridge.scheduleNotification(String(id), title, body, delayMs);
-        console.log(`[MobileBridge] Scheduled via AndroidBridge in ${delayMs}ms`);
-        return;
-    }
-
-    // 2. Check for Capacitor Local Notifications Plugin
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
-        window.Capacitor.Plugins.LocalNotifications.schedule({
-            notifications: [{
-                id: Math.abs(parseInt(id)) || Math.floor(Math.random() * 1000000),
-                title: title,
-                body: body,
-                schedule: { at: new Date(triggerTime) },
-                sound: 'beep.wav',
-                actionTypeId: '',
-                extra: null
-            }]
+        // 1. Force Android to register the custom sound channel
+        window.Capacitor.Plugins.LocalNotifications.createChannel({
+            id: 'flowtick-alerts',
+            name: 'FlowTick Alerts',
+            importance: 5,
+            sound: 'pomodoro.mp3', // Matches the file we put in the raw folder
+            visibility: 1
         }).then(() => {
-            console.log(`[MobileBridge] Scheduled via Capacitor at ${new Date(triggerTime)}`);
-        }).catch(err => {
-            console.error('[MobileBridge] Capacitor schedule failed:', err);
+            // 2. Schedule the notification to bypass Doze mode
+            window.Capacitor.Plugins.LocalNotifications.schedule({
+                notifications: [{
+                    id: Math.abs(parseInt(id)) || Math.floor(Math.random() * 1000000),
+                    title: title,
+                    body: body,
+                    schedule: { at: new Date(triggerTime), allowWhileIdle: true }, // Crucial for background firing
+                    sound: 'pomodoro.mp3',
+                    channelId: 'flowtick-alerts',
+                    actionTypeId: '',
+                    extra: null
+                }]
+            });
         });
         return;
     }
-
-    // 3. Check for Cordova Local Notification Plugin
-    if (window.cordova && window.cordova.plugins && window.cordova.plugins.notification && window.cordova.plugins.notification.local) {
-        window.cordova.plugins.notification.local.schedule({
-            id: Math.abs(parseInt(id)) || Math.floor(Math.random() * 1000000),
-            title: title,
-            text: body,
-            trigger: { at: new Date(triggerTime) }
-        });
-        console.log(`[MobileBridge] Scheduled via Cordova at ${new Date(triggerTime)}`);
-        return;
-    }
-
-    console.log(`[MobileBridge] Web fallback. Will alert when active. Delay: ${delayMs}ms`);
+    console.log(`[MobileBridge] Web fallback. Delay: ${delayMs}ms`);
 };
 
 window.cancelMobileNotification = function(id) {

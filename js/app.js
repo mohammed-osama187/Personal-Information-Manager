@@ -96,10 +96,115 @@ async function getTasksFromFirebase() {
     }
 }
 
+// ==========================================
+// Offline Sync Queue Engine
+// ==========================================
+function getOfflineQueue() {
+    return JSON.parse(localStorage.getItem('offline_sync_queue')) || [];
+}
+
+function saveOfflineQueue(queue) {
+    localStorage.setItem('offline_sync_queue', JSON.stringify(queue));
+}
+
+function addToOfflineQueue(action, item) {
+    const queue = getOfflineQueue();
+    const existingIdx = queue.findIndex(entry => entry.item && String(entry.item.id) === String(item.id) && entry.action === action);
+    if (existingIdx > -1) {
+        queue[existingIdx] = { action, item, timestamp: Date.now() };
+    } else {
+        queue.push({ action, item, timestamp: Date.now() });
+    }
+    saveOfflineQueue(queue);
+}
+
+function removeFromOfflineSaveQueue(id) {
+    let queue = getOfflineQueue();
+    queue = queue.filter(entry => !(entry.action === 'save' && entry.item && String(entry.item.id) === String(id)));
+    saveOfflineQueue(queue);
+}
+
+let isSyncingOfflineQueue = false;
+async function syncOfflineQueue() {
+    if (isSyncingOfflineQueue) return;
+    if (!window.db || !window.addDoc || !window.collection) return;
+
+    const queue = getOfflineQueue();
+    if (queue.length === 0) return;
+
+    isSyncingOfflineQueue = true;
+    console.log(`[OfflineSync] Starting synchronization of ${queue.length} offline operations...`);
+
+    const remainingOperations = [];
+
+    for (const op of queue) {
+        try {
+            if (op.action === 'save') {
+                const item = op.item;
+                const id = item.id;
+                const itemCopy = { ...item };
+                delete itemCopy.id;
+
+                Object.keys(itemCopy).forEach(key => {
+                    if (itemCopy[key] === undefined) {
+                        itemCopy[key] = null;
+                    }
+                });
+
+                if (id && String(id).startsWith('offline_')) {
+                    const docRef = await window.addDoc(window.collection(window.db, "tasks"), itemCopy);
+                    const newId = docRef.id;
+
+                    let cachedTasks = JSON.parse(localStorage.getItem('firebase_tasks_cache')) || [];
+                    const localIdx = cachedTasks.findIndex(t => String(t.id) === String(id));
+                    if (localIdx > -1) {
+                        cachedTasks[localIdx].id = newId;
+                        localStorage.setItem('firebase_tasks_cache', JSON.stringify(cachedTasks));
+                        if (window.scheduleItemNotifications) {
+                            window.scheduleItemNotifications(cachedTasks[localIdx]);
+                        }
+                    }
+
+                    queue.forEach(otherOp => {
+                        if (otherOp.item && String(otherOp.item.id) === String(id)) {
+                            otherOp.item.id = newId;
+                        }
+                    });
+                } else if (id) {
+                    const docRef = window.doc(window.db, "tasks", String(id));
+                    await window.updateDoc(docRef, itemCopy);
+                }
+            } else if (op.action === 'delete') {
+                const id = op.item.id;
+                if (id && !String(id).startsWith('offline_')) {
+                    const docRef = window.doc(window.db, "tasks", String(id));
+                    await window.deleteDoc(docRef);
+                }
+            }
+        } catch (err) {
+            console.error("[OfflineSync] Error syncing operation, will retry later:", op, err);
+            remainingOperations.push(op);
+        }
+    }
+
+    saveOfflineQueue(remainingOperations);
+    isSyncingOfflineQueue = false;
+
+    if (remainingOperations.length === 0) {
+        console.log("[OfflineSync] Sync complete! All offline changes published.");
+        displayTasks();
+        if (window.calendarInstance) window.calendarInstance.refetchEvents();
+    }
+}
+
+window.addEventListener('online', () => {
+    console.log("[Connection] Network online. Triggering sync...");
+    syncOfflineQueue();
+});
+
 async function saveTaskToFirebase(item) {
     const currentUser = JSON.parse(localStorage.getItem('currentUser'));
     if (!currentUser) {
-        // Guest mode - save to local storage guest_tasks
         let guestTasks = JSON.parse(localStorage.getItem('guest_tasks')) || [];
         if (!item.id) {
             item.id = 'guest_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -115,30 +220,72 @@ async function saveTaskToFirebase(item) {
         return;
     }
 
+    let cachedTasks = JSON.parse(localStorage.getItem('firebase_tasks_cache')) || [];
+    if (!item.id) {
+        item.id = 'offline_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+    const idx = cachedTasks.findIndex(t => String(t.id) === String(item.id));
+    if (idx > -1) {
+        cachedTasks[idx] = item;
+    } else {
+        cachedTasks.push(item);
+    }
+    localStorage.setItem('firebase_tasks_cache', JSON.stringify(cachedTasks));
+
     if (!window.db || !window.addDoc || !window.collection) {
-        console.error("Firebase not loaded yet.");
+        console.warn("Firebase not loaded yet. Saved task locally.");
+        addToOfflineQueue('save', item);
         return;
     }
+
     try {
         const itemCopy = { ...item };
         const id = itemCopy.id;
-        delete itemCopy.id;
 
-        Object.keys(itemCopy).forEach(key => {
-            if (itemCopy[key] === undefined) {
-                itemCopy[key] = null;
+        if (id && String(id).startsWith('offline_')) {
+            delete itemCopy.id;
+            Object.keys(itemCopy).forEach(key => {
+                if (itemCopy[key] === undefined) {
+                    itemCopy[key] = null;
+                }
+            });
+            const docRef = await window.addDoc(window.collection(window.db, "tasks"), itemCopy);
+            const newId = docRef.id;
+            
+            let currentCache = JSON.parse(localStorage.getItem('firebase_tasks_cache')) || [];
+            const localIdx = currentCache.findIndex(t => String(t.id) === String(id));
+            if (localIdx > -1) {
+                currentCache[localIdx].id = newId;
+                localStorage.setItem('firebase_tasks_cache', JSON.stringify(currentCache));
+                if (window.scheduleItemNotifications) {
+                    window.scheduleItemNotifications(currentCache[localIdx]);
+                }
             }
-        });
-
-        if (id) {
-            const docRef = window.doc(window.db, "tasks", String(id));
-            await window.updateDoc(docRef, itemCopy);
+            item.id = newId;
         } else {
-            await window.addDoc(window.collection(window.db, "tasks"), itemCopy);
+            delete itemCopy.id;
+            Object.keys(itemCopy).forEach(key => {
+                if (itemCopy[key] === undefined) {
+                    itemCopy[key] = null;
+                }
+            });
+            if (id) {
+                const docRef = window.doc(window.db, "tasks", String(id));
+                await window.updateDoc(docRef, itemCopy);
+            } else {
+                const docRef = await window.addDoc(window.collection(window.db, "tasks"), itemCopy);
+                item.id = docRef.id;
+                let currentCache = JSON.parse(localStorage.getItem('firebase_tasks_cache')) || [];
+                const localIdx = currentCache.findIndex(t => String(t.id) === String(id));
+                if (localIdx > -1) {
+                    currentCache[localIdx].id = docRef.id;
+                    localStorage.setItem('firebase_tasks_cache', JSON.stringify(currentCache));
+                }
+            }
         }
     } catch (e) {
         console.error("Error saving task to Firebase:", e);
-        throw e;
+        addToOfflineQueue('save', item);
     }
 }
 
@@ -148,8 +295,12 @@ async function deleteTaskFromFirebase(id) {
         window.cancelMobileNotification(id);
         window.cancelMobileNotification(id + '_due');
     }
+    
+    let cachedTasks = JSON.parse(localStorage.getItem('firebase_tasks_cache')) || [];
+    cachedTasks = cachedTasks.filter(t => String(t.id) !== String(id));
+    localStorage.setItem('firebase_tasks_cache', JSON.stringify(cachedTasks));
+
     if (!currentUser) {
-        // Guest mode - delete from local storage guest_tasks
         let guestTasks = JSON.parse(localStorage.getItem('guest_tasks')) || [];
         guestTasks = guestTasks.filter(t => String(t.id) !== String(id));
         localStorage.setItem('guest_tasks', JSON.stringify(guestTasks));
@@ -157,21 +308,25 @@ async function deleteTaskFromFirebase(id) {
     }
 
     if (!window.db || !window.deleteDoc || !window.doc) {
-        console.error("Firebase not loaded yet.");
+        console.warn("Firebase not loaded yet. Deleted task locally.");
+        addToOfflineQueue('delete', { id });
         return;
     }
+
+    if (String(id).startsWith('offline_')) {
+        removeFromOfflineSaveQueue(id);
+        return;
+    }
+
     try {
         const docRef = window.doc(window.db, "tasks", String(id));
         await window.deleteDoc(docRef);
     } catch (e) {
         console.error("Error deleting task from Firebase:", e);
-        throw e;
+        addToOfflineQueue('delete', { id });
     }
 }
 
-// ==========================================
-// Guest Data Firestore Sync Engine
-// ==========================================
 async function syncGuestDataToFirebase(userId) {
     const guestTasks = JSON.parse(localStorage.getItem('guest_tasks')) || [];
     if (guestTasks.length === 0) return;
@@ -182,7 +337,7 @@ async function syncGuestDataToFirebase(userId) {
         return;
     }
 
-    showToast('Syncing your local guest tasks to the cloud...', 'info');
+    showToast('Syncing your guest tasks...', 'info');
 
     try {
         for (const task of guestTasks) {
@@ -201,7 +356,7 @@ async function syncGuestDataToFirebase(userId) {
         }
         
         localStorage.removeItem('guest_tasks');
-        showToast('All guest tasks have been synced to the cloud!', 'success');
+        showToast('All guest tasks have been synced!', 'success');
         
         displayTasks();
         if(window.calendarInstance) window.calendarInstance.refetchEvents();
@@ -638,27 +793,112 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize task list controls
     window.currentTaskFilter = 'all';
     window.currentTaskSort = 'default';
-    
+    window.customFilterStartDate = '';
+    window.customFilterEndDate = '';
+
     const filterBtns = document.querySelectorAll('.btn-filter');
+
+    function syncFilterUI() {
+        filterBtns.forEach(btn => {
+            const isCustom = btn.getAttribute('data-filter') === 'custom';
+            if (btn.getAttribute('data-filter') === window.currentTaskFilter) {
+                btn.classList.add('active');
+                if (isCustom && window.customFilterStartDate && window.customFilterEndDate) {
+                    btn.textContent = `Custom (${window.customFilterStartDate} - ${window.customFilterEndDate})`;
+                }
+            } else {
+                btn.classList.remove('active');
+                if (isCustom) {
+                    btn.textContent = 'Custom';
+                }
+            }
+        });
+
+        if (window.customTaskFilterSelect) {
+            const labelMap = {
+                all: 'All Tasks',
+                today: 'Today',
+                tomorrow: 'Tomorrow',
+                week: 'This Week',
+                month: 'This Month',
+                year: 'This Year',
+                custom: 'Custom Range'
+            };
+            window.customTaskFilterSelect.setValue(window.currentTaskFilter, labelMap[window.currentTaskFilter] || 'All Tasks');
+            
+            if (window.currentTaskFilter === 'custom' && window.customFilterStartDate && window.customFilterEndDate) {
+                const displayEl = document.getElementById('task-filter-display');
+                if (displayEl) {
+                    displayEl.innerHTML = `<span style="font-size:11px;">${window.customFilterStartDate} - ${window.customFilterEndDate}</span> <i class="fa-solid fa-chevron-down caret-icon"></i>`;
+                }
+            }
+        }
+    }
+
+    const customFilterModal = document.getElementById('custom-filter-modal');
+    const closeCustomFilterModalBtn = document.getElementById('close-custom-filter-modal');
+    const customFilterCancelBtn = document.getElementById('custom-filter-cancel');
+    const customFilterForm = document.getElementById('custom-filter-form');
+    const filterStartDateInput = document.getElementById('filter-start-date');
+    const filterEndDateInput = document.getElementById('filter-end-date');
+    const customFilterError = document.getElementById('custom-filter-error');
+
+    function openCustomFilterModal() {
+        if (customFilterModal) {
+            filterStartDateInput.value = window.customFilterStartDate || new Date().toISOString().split('T')[0];
+            filterEndDateInput.value = window.customFilterEndDate || new Date().toISOString().split('T')[0];
+            customFilterError.style.display = 'none';
+            customFilterModal.classList.add('active');
+        }
+    }
+
+    function closeCustomFilterModal() {
+        if (customFilterModal) {
+            customFilterModal.classList.remove('active');
+            syncFilterUI();
+        }
+    }
+
+    if (closeCustomFilterModalBtn) {
+        closeCustomFilterModalBtn.addEventListener('click', closeCustomFilterModal);
+    }
+    if (customFilterCancelBtn) {
+        customFilterCancelBtn.addEventListener('click', closeCustomFilterModal);
+    }
+
+    if (customFilterForm) {
+        customFilterForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const startVal = filterStartDateInput.value;
+            const endVal = filterEndDateInput.value;
+
+            if (startVal && endVal && endVal < startVal) {
+                customFilterError.style.display = 'block';
+                return;
+            }
+
+            window.customFilterStartDate = startVal;
+            window.customFilterEndDate = endVal;
+            window.currentTaskFilter = 'custom';
+            
+            customFilterModal.classList.remove('active');
+            syncFilterUI();
+            
+            if (typeof window.sortAndRenderDashboard === 'function') {
+                window.sortAndRenderDashboard();
+            }
+        });
+    }
+
     filterBtns.forEach(btn => {
         btn.addEventListener('click', () => {
-            filterBtns.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
             const targetFilter = btn.getAttribute('data-filter');
-            window.currentTaskFilter = targetFilter;
-            
-            // Sync mobile dropdown select display
-            if (window.customTaskFilterSelect) {
-                const labelMap = {
-                    all: 'All Tasks',
-                    today: 'Today',
-                    tomorrow: 'Tomorrow',
-                    week: 'This Week',
-                    month: 'This Month',
-                    year: 'This Year'
-                };
-                window.customTaskFilterSelect.setValue(targetFilter, labelMap[targetFilter] || 'All Tasks');
+            if (targetFilter === 'custom') {
+                openCustomFilterModal();
+                return;
             }
+            window.currentTaskFilter = targetFilter;
+            syncFilterUI();
 
             if (typeof window.sortAndRenderDashboard === 'function') {
                 window.sortAndRenderDashboard();
@@ -667,14 +907,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.customTaskFilterSelect = initCustomSelect('task-filter-wrapper', (val) => {
-        window.currentTaskFilter = val || 'all';
-        
-        // Sync desktop filter buttons state
-        const correspondingBtn = document.querySelector(`.btn-filter[data-filter="${window.currentTaskFilter}"]`);
-        if (correspondingBtn) {
-            filterBtns.forEach(b => b.classList.remove('active'));
-            correspondingBtn.classList.add('active');
+        if (val === 'custom') {
+            openCustomFilterModal();
+            return;
         }
+        window.currentTaskFilter = val || 'all';
+        syncFilterUI();
 
         if (typeof window.sortAndRenderDashboard === 'function') {
             window.sortAndRenderDashboard();
@@ -839,12 +1077,12 @@ function parseLocalISOString(dateStr, timeStr) {
     return new Date(y, m - 1, d, h, min, 0);
 }
 
-function getNextOccurrenceTime(startDateStr, startTimeStr, frequency, specificDays, customNum, customUnit) {
+function getNextOccurrenceTime(startDateStr, startTimeStr, frequency, specificDays, customNum, customUnit, relativeToNow = true) {
     let triggerTime = parseLocalISOString(startDateStr, startTimeStr || '09:00');
     if (!triggerTime) return null;
 
-    const now = new Date();
-    if (triggerTime > now) {
+    const compareTime = relativeToNow ? new Date() : new Date(triggerTime.getTime());
+    if (relativeToNow && triggerTime > compareTime) {
         return triggerTime;
     }
 
@@ -852,29 +1090,29 @@ function getNextOccurrenceTime(startDateStr, startTimeStr, frequency, specificDa
     let iterations = 0;
 
     if (frequency === 'daily') {
-        while (triggerTime <= now && iterations < maxIterations) {
+        while (triggerTime <= compareTime && iterations < maxIterations) {
             triggerTime.setDate(triggerTime.getDate() + 1);
             iterations++;
         }
     } else if (frequency === 'weekly') {
-        while (triggerTime <= now && iterations < maxIterations) {
+        while (triggerTime <= compareTime && iterations < maxIterations) {
             triggerTime.setDate(triggerTime.getDate() + 7);
             iterations++;
         }
     } else if (frequency === 'monthly') {
-        while (triggerTime <= now && iterations < maxIterations) {
+        while (triggerTime <= compareTime && iterations < maxIterations) {
             triggerTime.setMonth(triggerTime.getMonth() + 1);
             iterations++;
         }
     } else if (frequency === 'yearly') {
-        while (triggerTime <= now && iterations < maxIterations) {
+        while (triggerTime <= compareTime && iterations < maxIterations) {
             triggerTime.setFullYear(triggerTime.getFullYear() + 1);
             iterations++;
         }
     } else if (frequency === 'custom') {
         const num = customNum || 1;
         const unit = customUnit || 'days';
-        while (triggerTime <= now && iterations < maxIterations) {
+        while (triggerTime <= compareTime && iterations < maxIterations) {
             if (unit === 'days') {
                 triggerTime.setDate(triggerTime.getDate() + num);
             } else if (unit === 'weeks') {
@@ -883,7 +1121,7 @@ function getNextOccurrenceTime(startDateStr, startTimeStr, frequency, specificDa
                     for (let dayOffset = 1; dayOffset < 365; dayOffset++) {
                         let testTime = new Date(triggerTime.getTime());
                         testTime.setDate(testTime.getDate() + dayOffset);
-                        if (specificDays.includes(testTime.getDay()) && testTime > now) {
+                        if (specificDays.includes(testTime.getDay()) && testTime > compareTime) {
                             triggerTime = testTime;
                             foundNext = true;
                             break;
@@ -907,7 +1145,7 @@ function getNextOccurrenceTime(startDateStr, startTimeStr, frequency, specificDa
         for (let dayOffset = 1; dayOffset < 365; dayOffset++) {
             let testTime = new Date(triggerTime.getTime());
             testTime.setDate(testTime.getDate() + dayOffset);
-            if (specificDays.includes(testTime.getDay()) && testTime > now) {
+            if (specificDays.includes(testTime.getDay()) && testTime > compareTime) {
                 triggerTime = testTime;
                 foundNext = true;
                 break;
@@ -1301,7 +1539,11 @@ function getStableNumericId(strId) {
                 if (typeof window.Capacitor.Plugins.LocalNotifications.checkExactNotificationSetting === 'function') {
                     const status = await window.Capacitor.Plugins.LocalNotifications.checkExactNotificationSetting();
                     if (status && status.granted === false) {
-                        window.location.href = "intent://#Intent;action=android.settings.REQUEST_SCHEDULE_EXACT_ALARM;end";
+                        if (typeof window.Capacitor.Plugins.LocalNotifications.changeExactNotificationSetting === 'function') {
+                            await window.Capacitor.Plugins.LocalNotifications.changeExactNotificationSetting();
+                        } else {
+                            window.location.href = "intent://#Intent;action=android.settings.REQUEST_SCHEDULE_EXACT_ALARM;end";
+                        }
                     }
                 }
             } catch(e) {
@@ -1382,7 +1624,9 @@ window.scheduleItemNotifications = function(item) {
     // 2. Always cancel the previous scheduled native alarms before creating new ones
     // This prevents stale/duplicate notifications perfectly
     if (window.cancelMobileNotification) {
-        window.cancelMobileNotification(numericId);
+        for (let i = 0; i < 5; i++) {
+            window.cancelMobileNotification(numericId + i * 1000000);
+        }
         window.cancelMobileNotification(dueNumericId);
     }
 
@@ -1428,14 +1672,45 @@ window.scheduleItemNotifications = function(item) {
             }
 
             if (window.scheduleMobileNotification) {
-                window.scheduleMobileNotification(
-                    numericId,
-                    notifTitle,
-                    notifBody,
-                    triggerTime,
-                    item.frequency,
-                    'success.mp3'
-                );
+                if (isRepeating) {
+                    let occurrenceTime = new Date(triggerTime);
+                    for (let i = 0; i < 5; i++) {
+                        if (occurrenceTime > new Date()) {
+                            window.scheduleMobileNotification(
+                                numericId + i * 1000000,
+                                notifTitle,
+                                notifBody,
+                                occurrenceTime,
+                                null,
+                                'success.mp3'
+                            );
+                        }
+                        
+                        const nextY = occurrenceTime.getFullYear();
+                        const nextM = String(occurrenceTime.getMonth() + 1).padStart(2, '0');
+                        const nextD = String(occurrenceTime.getDate()).padStart(2, '0');
+                        const nextDateStr = `${nextY}-${nextM}-${nextD}`;
+
+                        occurrenceTime = getNextOccurrenceTime(
+                            nextDateStr,
+                            item.startTime,
+                            item.frequency,
+                            item.specificDays,
+                            item.customNum,
+                            item.customUnit
+                        );
+                        if (!occurrenceTime) break;
+                    }
+                } else {
+                    window.scheduleMobileNotification(
+                        numericId,
+                        notifTitle,
+                        notifBody,
+                        triggerTime,
+                        null,
+                        'success.mp3'
+                    );
+                }
             }
         }
     }
@@ -2416,7 +2691,7 @@ function initFormSubmit(modal) {
                     if (window.scheduleItemNotifications) {
                         window.scheduleItemNotifications(dataItem);
                     }
-                    finishSubmit('Updated successfully in the cloud!', false);
+                    finishSubmit('Updated successfully!', false);
                 }).catch(e => {
                     console.error(e);
                     submitBtn.disabled = false;
@@ -2431,7 +2706,7 @@ function initFormSubmit(modal) {
                     if (window.scheduleItemNotifications) {
                         window.scheduleItemNotifications(dataItem);
                     }
-                    finishSubmit('Saved successfully in Firebase!', false);
+                    finishSubmit('Saved successfully!', false);
                 }).catch(e => {
                     console.error(e);
                     submitBtn.disabled = false;
@@ -2457,20 +2732,6 @@ function initFormSubmit(modal) {
 }
 
 function initDatabase() {
-    // Disabled IndexedDB in favor of Firebase Firestore integration
-    // const request = indexedDB.open(DB_NAME, DB_VERSION);
-    // request.onsuccess = (event) => {
-    //     db = event.target.result;
-    //     displayTasks(); 
-    //     initCalendar();
-    // };
-    // request.onupgradeneeded = (event) => {
-    //     const database = event.target.result;
-    //     if (!database.objectStoreNames.contains('tasks')) {
-    //         database.createObjectStore('tasks', { keyPath: 'id', autoIncrement: true });
-    //     }
-    // };
-
     displayTasks(); 
     initCalendar();
 
@@ -2479,6 +2740,7 @@ function initDatabase() {
         if (window.db) {
             clearInterval(checkFb);
             displayTasks();
+            syncOfflineQueue();
             if (window.calendarInstance) {
                 window.calendarInstance.refetchEvents();
             }
@@ -2601,13 +2863,6 @@ function displayTasks() {
         if (habitsContainer) habitsContainer.innerHTML = '';
         if (historyContainer) historyContainer.innerHTML = '';
 
-        const tasks = items.filter(i => (i.type === 'task' || !i.type) && !i.isDeleted);
-        const habits = items.filter(i => i.type === 'habit' && !i.isDeleted);
-
-        // Store active tasks globally for live ticking
-        window.activeTasksList = tasks.filter(t => !t.isCompleted && !t.isCancelled).sort((a, b) => b.createdAt - a.createdAt);
-        window.allActiveItemsList = items.filter(t => (!t.isCompleted || t.type === 'habit' || (t.frequency && t.frequency !== 'none')) && !t.isCancelled && !t.isDeleted);
-        
         const now = new Date();
         const year = now.getFullYear();
         const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -2616,6 +2871,15 @@ function displayTasks() {
         const currentDayOfWeek = now.getDay();
         const nowMs = Date.now();
 
+        const tasks = items.filter(i => (i.type === 'task' || !i.type) && !i.isDeleted);
+        const habits = items.filter(i => i.type === 'habit' && !i.isDeleted);
+
+
+
+        // Store active tasks globally for live ticking
+        window.activeTasksList = tasks.filter(t => !t.isCompleted && !t.isCancelled).sort((a, b) => b.createdAt - a.createdAt);
+        window.allActiveItemsList = items.filter(t => (!t.isCompleted || t.type === 'habit' || (t.frequency && t.frequency !== 'none')) && !t.isCancelled && !t.isDeleted);
+        
         // Pre-calculate trigger timestamps once to keep the check loop extremely fast and prevent GC spikes
         window.allActiveItemsList.forEach(item => {
             if (item.startDate && item.startTime) {
@@ -2683,6 +2947,30 @@ function displayTasks() {
         const activeHabits = habits.sort((a, b) => b.createdAt - a.createdAt);
         const historyItems = items.filter(t => (t.isCompleted || t.isCancelled || t.isDeleted) && t.type !== 'habit').sort((a, b) => b.createdAt - a.createdAt);
 
+        // Populate virtual history occurrences for repeating tasks
+        const repeatingHistoryItems = [];
+        tasks.forEach(t => {
+            const hasRepeat = t.frequency && t.frequency !== 'none';
+            if (hasRepeat && t.completedDates) {
+                t.completedDates.forEach(dateStr => {
+                    repeatingHistoryItems.push({
+                        ...t,
+                        id: t.id + '_completed_' + dateStr, // Unique virtual ID
+                        isCompleted: true,
+                        completedAtDate: dateStr, // Date of completion
+                        title: t.title + ` (Completed ${dateStr})`,
+                        startDate: dateStr,
+                        dueDate: null, // Clear due date for historical occurrence
+                        isVirtualOccurrence: true,
+                        originalTaskId: t.id
+                    });
+                });
+            }
+        });
+
+        // Combine standard history items and virtual repeating history items, then sort by creation date
+        const combinedHistoryItems = [...historyItems, ...repeatingHistoryItems].sort((a, b) => b.createdAt - a.createdAt);
+
         if (pomodoroSelect) {
             const pomodoroOptions = document.getElementById('pomodoro-task-options');
             if (pomodoroOptions) {
@@ -2715,7 +3003,7 @@ function displayTasks() {
         }
 
         if (habitsContainer && activeHabits.length === 0) habitsContainer.innerHTML = '<p class="empty-state">No active habits. Create one!</p>';
-        if (historyContainer && historyItems.length === 0) historyContainer.innerHTML = '<p class="empty-state">No completed or cancelled items yet.</p>';
+        if (historyContainer && combinedHistoryItems.length === 0) historyContainer.innerHTML = '<p class="empty-state">No completed or cancelled items yet.</p>';
 
         const createHTML = (item, isHistory = false) => {
             let timeInfo = item.startTime ? ` <i class="fa-regular fa-clock"></i> ${formatTaskTimeDisplay(item.startTime)}` : '';
@@ -2928,7 +3216,7 @@ function displayTasks() {
             activeHabits.forEach(t => habitsContainer.innerHTML += createHTML(t));
         }
         if (historyContainer) {
-            historyItems.forEach(t => historyContainer.innerHTML += createHTML(t, true));
+            combinedHistoryItems.forEach(t => historyContainer.innerHTML += createHTML(t, true));
         }
 
         // Dashboard Live Ticker Renderer (Upcoming, Current, Overdue Tasks)
@@ -3008,6 +3296,10 @@ function displayTasks() {
                     if (filterVal === 'year') {
                         const tDate = new Date(targetDateStr);
                         return tDate.getFullYear() === now.getFullYear();
+                    }
+                    if (filterVal === 'custom') {
+                        if (!window.customFilterStartDate || !window.customFilterEndDate) return true;
+                        return targetDateStr >= window.customFilterStartDate && targetDateStr <= window.customFilterEndDate;
                     }
                     return true;
                 });
@@ -3194,6 +3486,44 @@ window.cancelItem = function(id) {
 }
 
 window.restoreItem = function(id) {
+    if (String(id).includes('_completed_')) {
+        const [originalId, completedDate] = id.split('_completed_');
+        getTasksFromFirebase().then(tasks => {
+            const item = tasks.find(t => String(t.id) === String(originalId));
+            if (item && item.completedDates) {
+                item.completedDates = item.completedDates.filter(d => d !== completedDate);
+                
+                // If the restored date is earlier than current startDate, revert the active task's start/due dates
+                if (completedDate < item.startDate) {
+                    const currentStart = new Date(item.startDate);
+                    const restoredStart = new Date(completedDate);
+                    const diffTime = currentStart - restoredStart;
+                    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+                    
+                    item.startDate = completedDate;
+                    
+                    if (item.dueDate) {
+                        const currentDue = new Date(item.dueDate);
+                        const restoredDue = new Date(currentDue);
+                        restoredDue.setDate(restoredDue.getDate() - diffDays);
+                        
+                        const dy = restoredDue.getFullYear();
+                        const dm = String(restoredDue.getMonth() + 1).padStart(2, '0');
+                        const dd = String(restoredDue.getDate()).padStart(2, '0');
+                        item.dueDate = `${dy}-${dm}-${dd}`;
+                    }
+                }
+
+                saveTaskToFirebase(item).then(() => {
+                    showToast('Occurrence restored!', 'info', false);
+                    displayTasks();
+                    if(window.calendarInstance) window.calendarInstance.refetchEvents();
+                });
+            }
+        });
+        return;
+    }
+
     getTasksFromFirebase().then(tasks => {
         const item = tasks.find(t => String(t.id) === String(id));
         if (item) {
@@ -3214,6 +3544,24 @@ window.restoreItem = function(id) {
 }
 
 window.deleteItem = function(id) {
+    if (String(id).includes('_completed_')) {
+        const [originalId, completedDate] = id.split('_completed_');
+        showConfirm('Permanently delete this occurrence from history?', () => {
+            getTasksFromFirebase().then(tasks => {
+                const item = tasks.find(t => String(t.id) === String(originalId));
+                if (item && item.completedDates) {
+                    item.completedDates = item.completedDates.filter(d => d !== completedDate);
+                    saveTaskToFirebase(item).then(() => {
+                        showToast('Occurrence deleted', 'success', false);
+                        displayTasks();
+                        if(window.calendarInstance) window.calendarInstance.refetchEvents();
+                    });
+                }
+            });
+        });
+        return;
+    }
+
     getTasksFromFirebase().then(tasks => {
         const item = tasks.find(t => String(t.id) === String(id));
         if (!item) return;
@@ -3255,6 +3603,8 @@ window.toggleItemComplete = function(id, currentStatus) {
         const day = String(now.getDate()).padStart(2, '0');
         const todayStr = `${year}-${month}-${day}`;
 
+        const hasRepeat = item.frequency && item.frequency !== 'none';
+
         if (item.type === 'habit') {
             if (!item.completedDates) item.completedDates = [];
             const idx = item.completedDates.indexOf(todayStr);
@@ -3270,8 +3620,61 @@ window.toggleItemComplete = function(id, currentStatus) {
                 item.completedCount = 1;
                 showToast('Awesome! Marked as complete.', 'success', true);
             }
+        } else if (hasRepeat) {
+            // Repeating task completion logic: advance start/due date to next occurrence
+            if (!item.completedDates) item.completedDates = [];
+            
+            // Add the current scheduled date to completed dates log
+            if (!item.completedDates.includes(item.startDate)) {
+                item.completedDates.push(item.startDate);
+            }
+
+            // Calculate next occurrence starting from current item.startDate
+            let nextStart = getNextOccurrenceTime(
+                item.startDate,
+                item.startTime || '09:00',
+                item.frequency,
+                item.specificDays,
+                item.customNum,
+                item.customUnit,
+                false // relativeToNow = false
+            );
+
+            // Fallback if nextStart is not found
+            if (!nextStart) {
+                nextStart = new Date(item.startDate);
+                nextStart.setDate(nextStart.getDate() + 1);
+            }
+
+            // Format next start date
+            const ny = nextStart.getFullYear();
+            const nm = String(nextStart.getMonth() + 1).padStart(2, '0');
+            const nd = String(nextStart.getDate()).padStart(2, '0');
+            const nextStartDateStr = `${ny}-${nm}-${nd}`;
+
+            // Shift due date if present
+            if (item.dueDate) {
+                const currentStart = new Date(item.startDate);
+                const currentDue = new Date(item.dueDate);
+                const diffTime = currentDue - currentStart;
+                const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+                const nextDue = new Date(nextStart);
+                nextDue.setDate(nextDue.getDate() + diffDays);
+                
+                const dy = nextDue.getFullYear();
+                const dm = String(nextDue.getMonth() + 1).padStart(2, '0');
+                const dd = String(nextDue.getDate()).padStart(2, '0');
+                item.dueDate = `${dy}-${dm}-${dd}`;
+            }
+
+            item.startDate = nextStartDateStr;
+            item.isCompleted = false; // Remains active for next run
+            item.completedCount = 0;
+            item.lastCompletedDate = todayStr;
+            showToast('Awesome! Marked as complete.', 'success', true);
         } else {
-            // Standard task completion logic
+            // Standard one-shot task completion logic
             if (!currentStatus) { 
                 item.completedCount = (item.completedCount || 0) + 1;
                 if (item.completedCount >= (item.timesPerDay || 1)) {

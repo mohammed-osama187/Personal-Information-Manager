@@ -127,6 +127,8 @@
                         Stats</button>
                     <button class="menu-item" data-target="settings-page"><i class="fa-solid fa-gear"></i>
                         Settings</button>
+                    <button class="menu-item" data-target="about-page"><i class="fa-solid fa-circle-info"></i> About
+                        Us</button>
                 </nav>
             </div>
         </aside>
@@ -170,7 +172,8 @@
                     </div>
                 </header>
 
-                <div class="task-controls-bar" style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; align-items: center; justify-content: space-between;">
+                <div class="task-controls-bar"
+                    style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; align-items: center; justify-content: space-between;">
                     <div class="filter-group desktop-only-filters" style="display: flex; gap: 8px; flex-wrap: wrap;">
                         <button class="btn-filter active" data-filter="all">All</button>
                         <button class="btn-filter" data-filter="today">Today</button>
@@ -178,11 +181,14 @@
                         <button class="btn-filter" data-filter="week">This Week</button>
                         <button class="btn-filter" data-filter="month">This Month</button>
                         <button class="btn-filter" data-filter="year">This Year</button>
+                        <button class="btn-filter" data-filter="custom">Custom</button>
                     </div>
                     <div class="filter-group mobile-only-filters" style="display: none; align-items: center; gap: 8px;">
                         <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Filter:</span>
-                        <div class="custom-select-wrapper" id="task-filter-wrapper" style="width: 140px; margin-bottom: 0;">
-                            <div class="custom-select-display" id="task-filter-display" style="padding: 6px 12px; font-size: 13.5px; border-radius: 30px;">
+                        <div class="custom-select-wrapper" id="task-filter-wrapper"
+                            style="width: 140px; margin-bottom: 0;">
+                            <div class="custom-select-display" id="task-filter-display"
+                                style="padding: 6px 12px; font-size: 13.5px; border-radius: 30px;">
                                 All Tasks <i class="fa-solid fa-chevron-down caret-icon"></i>
                             </div>
                             <div class="custom-select-options" id="task-filter-options" style="font-size: 13.5px;">
@@ -192,14 +198,17 @@
                                 <div class="custom-select-option" data-value="week">This Week</div>
                                 <div class="custom-select-option" data-value="month">This Month</div>
                                 <div class="custom-select-option" data-value="year">This Year</div>
+                                <div class="custom-select-option" data-value="custom">Custom Range</div>
                             </div>
                             <input type="hidden" id="task-filter-input" value="all">
                         </div>
                     </div>
                     <div class="sort-group" style="display: flex; align-items: center; gap: 8px;">
                         <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Sort By:</span>
-                        <div class="custom-select-wrapper" id="task-sort-wrapper" style="width: 140px; margin-bottom: 0;">
-                            <div class="custom-select-display" id="task-sort-display" style="padding: 6px 12px; font-size: 13.5px; border-radius: 30px;">
+                        <div class="custom-select-wrapper" id="task-sort-wrapper"
+                            style="width: 140px; margin-bottom: 0;">
+                            <div class="custom-select-display" id="task-sort-display"
+                                style="padding: 6px 12px; font-size: 13.5px; border-radius: 30px;">
                                 Default <i class="fa-solid fa-chevron-down caret-icon"></i>
                             </div>
                             <div class="custom-select-options" id="task-sort-options" style="font-size: 13.5px;">
@@ -440,6 +449,87 @@
                 </header>
                 <div id="stats-container" class="stats-container-grid">
                     <!-- Stats content populated dynamically in app.js -->
+                </div>
+            </section>
+
+            <section id="about-page" class="page-section">
+                <header class="page-header">
+                    <h1>About FlowTick</h1>
+                    <p>Learn more about our mission and application.</p>
+                </header>
+                <div class="card about-card"
+                    style="margin-top: 15px; padding: 32px; line-height: 1.7; border-radius: 24px; background: var(--item-bg); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 24px; box-shadow: var(--shadow-sm); transition: transform 0.2s, box-shadow 0.2s;">
+                    <div
+                        style="display: flex; align-items: center; gap: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 24px;">
+                        <img src="logo1.png" alt="FlowTick Logo"
+                            style="width: 72px;height: 72px;border-radius: 50%;object-fit: cover;box-shadow: 0 0px 25px rgba(47,123,246,0.35);">
+                        <div>
+                            <h2
+                                style="font-size: 24px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; letter-spacing: -0.5px;">
+                                FlowTick</h2>
+                            <p style="font-size: 13.5px; color: var(--color-ticktick-blue); font-weight: 600;">Personal
+                                Information Manager • v1.2.0</p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3
+                            style="font-size: 17px; font-weight: 600; color: var(--text-main); margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+                            <i class="fa-solid fa-bullseye" style="color: var(--color-ticktick-blue);"></i> Our Mission
+                        </h3>
+                        <p style="color: var(--text-muted); font-size: 14px;">
+                            FlowTick is a next-generation Personal Information Manager designed to seamlessly organize
+                            your life. By combining advanced task scheduling, habit building, calendar synchronization,
+                            productivity statistics, and focus-boosting Pomodoro timers into a single unified space,
+                            FlowTick empowers you to stay in flow, track progress, and accomplish more every single day.
+                        </p>
+                    </div>
+
+                    <div>
+                        <h3
+                            style="font-size: 17px; font-weight: 600; color: var(--text-main); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+                            <i class="fa-solid fa-star" style="color: #FFA940;"></i> Key Features
+                        </h3>
+                        <div
+                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+                            <div
+                                style="padding: 16px; border-radius: 16px; background: var(--bg-notion-sidebar); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 6px;">
+                                <span style="font-weight: 600; color: var(--text-main); font-size: 13.5px;"><i
+                                        class="fa-solid fa-list-check" style="color: #73D13D;"></i> Smart Tasks</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">Standard lists & Kanban boards
+                                    for flexible scheduling.</span>
+                            </div>
+                            <div
+                                style="padding: 16px; border-radius: 16px; background: var(--bg-notion-sidebar); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 6px;">
+                                <span style="font-weight: 600; color: var(--text-main); font-size: 13.5px;"><i
+                                        class="fa-solid fa-rotate" style="color: #FFA940;"></i> Habit Tracker</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">Dynamic grid loops to build
+                                    consistent streaks.</span>
+                            </div>
+                            <div
+                                style="padding: 16px; border-radius: 16px; background: var(--bg-notion-sidebar); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 6px;">
+                                <span style="font-weight: 600; color: var(--text-main); font-size: 13.5px;"><i
+                                        class="fa-solid fa-stopwatch" style="color: var(--color-ticktick-blue);"></i>
+                                    Pomodoro</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">Interactive timers to
+                                    supercharge focus sessions.</span>
+                            </div>
+                            <div
+                                style="padding: 16px; border-radius: 16px; background: var(--bg-notion-sidebar); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 6px;">
+                                <span style="font-weight: 600; color: var(--text-main); font-size: 13.5px;"><i
+                                        class="fa-solid fa-chart-pie" style="color: #FF4D4F;"></i> Rich Stats</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">Visual statistics to track
+                                    completion rates.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div
+                        style="border-top: 1px solid var(--border-color); padding-top: 24px; text-align: center; font-size: 13px; color: var(--text-muted); margin-top: 12px;">
+                        <p style="font-weight: 500; color: var(--text-main);">© 2026 FlowTick. All Rights Reserved.</p>
+                        <p style="margin-top: 6px; font-size: 11.5px;">Designed with absolute focus and premium
+                            precision to keep your workflows flowing.</p>
+                    </div>
                 </div>
             </section>
 
@@ -740,6 +830,35 @@
                 <button id="confirm-no" class="btn btn-secondary">Cancel</button>
                 <button id="confirm-yes" class="btn btn-primary" style="background: #FF4D4F;">Yes, Proceed</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Custom Date Filter Modal -->
+    <div id="custom-filter-modal" class="modal" style="z-index: 1015;">
+        <div class="modal-content" style="max-width: 400px; border-radius: 24px; padding: 24px;">
+            <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <h3 style="font-size: 18px; font-weight: 700; color: var(--text-main); margin: 0; display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-calendar-days" style="color: var(--color-ticktick-blue);"></i> Custom Date Range
+                </h3>
+                <button id="close-custom-filter-modal" class="close-btn" style="background: none; border: none; font-size: 18px; color: var(--text-muted); cursor: pointer;"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <form id="custom-filter-form" onsubmit="event.preventDefault();" style="display: flex; flex-direction: column; width: 100%;">
+                <div class="form-group" style="margin-bottom: 16px; text-align: left; width: 100%;">
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Start Date</label>
+                    <input type="date" id="filter-start-date" required style="width: 100%; padding: 10px 16px; border-radius: 30px; border: 1px solid var(--border-color); background-color: var(--bg-notion-sidebar); color: var(--text-main); font-size: 14.5px; box-sizing: border-box;">
+                </div>
+                <div class="form-group" style="margin-bottom: 20px; text-align: left; width: 100%;">
+                    <label style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">End Date</label>
+                    <input type="date" id="filter-end-date" required style="width: 100%; padding: 10px 16px; border-radius: 30px; border: 1px solid var(--border-color); background-color: var(--bg-notion-sidebar); color: var(--text-main); font-size: 14.5px; box-sizing: border-box;">
+                </div>
+                <div id="custom-filter-error" style="color: #FF4D4F; font-size: 13px; margin-top: -10px; margin-bottom: 16px; display: none; text-align: left; font-weight: 500;">
+                    <i class="fa-solid fa-circle-info"></i> End date cannot be before start date.
+                </div>
+                <div style="display: flex; gap: 12px; justify-content: flex-end; width: 100%;">
+                    <button type="button" id="custom-filter-cancel" class="btn btn-secondary" style="border-radius: 30px; padding: 8px 20px; font-size: 13.5px;">Cancel</button>
+                    <button type="submit" id="custom-filter-apply" class="btn btn-primary" style="border-radius: 30px; padding: 8px 20px; font-size: 13.5px;">Apply Filter</button>
+                </div>
+            </form>
         </div>
     </div>
 

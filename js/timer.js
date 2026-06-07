@@ -1,4 +1,9 @@
 import { playSound, showToast } from './utils.js';
+import { 
+    cancelMobileNotification, 
+    scheduleMobileNotification, 
+    updateMobileTimerNotification 
+} from './notifications.js';
 
 let sessionMinutes = 25;
 let timeLeft = 25 * 60;
@@ -8,12 +13,6 @@ let isWorkSession = true;
 
 // SVG arc circumference: 2π × r where r=75 (the timer circle radius in the SVG).
 const ARC_LENGTH = 471.24;
-
-// Stable integer IDs for the four Pomodoro local notifications.
-const NOTIF_FOCUS_END   = 999991; // fired when focus session ends
-const NOTIF_BREAK_END   = 999992; // fired when break ends
-const NOTIF_SESSION     = 999993; // scheduled for the end of the current running timer
-const NOTIF_LIVE_TIMER  = 888888; // live countdown ticker notification
 
 export function initPomodoroDrag() {
     const svgContainer = document.getElementById('svg-container');
@@ -119,6 +118,15 @@ export function initPomodoroDrag() {
     window.addEventListener('touchmove', handleDrag, { passive: false });
     window.addEventListener('touchend', () => { isDragging = false; });
 
+    function cancelAllPomodoroNotifications() {
+        if (cancelMobileNotification) {
+            cancelMobileNotification(999991);
+            cancelMobileNotification(999992);
+            cancelMobileNotification(999993);
+            cancelMobileNotification(888888);
+        }
+    }
+
     function syncTimerWithTimePassed() {
         if (!isRunning) return;
         const expectedEnd = localStorage.getItem('pomodoro_expected_end');
@@ -127,9 +135,17 @@ export function initPomodoroDrag() {
             timeLeft = Math.max(0, Math.ceil(remainingMs / 1000));
             updateTimeDisplay();
 
+            if (timeLeft > 0 && updateMobileTimerNotification) {
+                if (typeof window.lastNotificationTime === 'undefined' || window.lastNotificationTime !== timeLeft) {
+                    window.lastNotificationTime = timeLeft;
+                    updateMobileTimerNotification(isWorkSession, timeLeft);
+                }
+            }
+
             if (timeLeft <= 0) {
                 playSound('pomodoro');
-                delete window.lastMinutesRemaining;
+                cancelAllPomodoroNotifications();
+                delete window.lastNotificationTime;
 
                 if (isWorkSession) {
                     isWorkSession = false;
@@ -139,6 +155,25 @@ export function initPomodoroDrag() {
                     timeLeft = Math.round(sessionMinutes / 5) * 60;
                     const nextEnd = Date.now() + (timeLeft * 1000);
                     localStorage.setItem('pomodoro_expected_end', nextEnd);
+                    
+                    if (scheduleMobileNotification) {
+                        scheduleMobileNotification(
+                            999991,
+                            'Focus Session Finished!',
+                            'Great focus! Time for a short break.',
+                            Date.now() + 100,
+                            null,
+                            'pomodoro.mp3'
+                        );
+                        scheduleMobileNotification(
+                            999993,
+                            'Break Time Finished!',
+                            'Break over! Ready to focus on the next task?',
+                            nextEnd,
+                            null,
+                            'pomodoro.mp3'
+                        );
+                    }
                     updateTimeDisplay();
                 } else {
                     clearInterval(timerInterval);
@@ -150,6 +185,17 @@ export function initPomodoroDrag() {
                     if (knob) knob.style.display = 'block';
                     showToast('Break over! Ready to focus?', 'info');
                     localStorage.removeItem('pomodoro_expected_end');
+                    
+                    if (scheduleMobileNotification) {
+                        scheduleMobileNotification(
+                            999992,
+                            'Break Time Finished!',
+                            'Break over! Ready to focus on the next task?',
+                            Date.now() + 100,
+                            null,
+                            'pomodoro.mp3'
+                        );
+                    }
                     updateKnobByMinutes(sessionMinutes);
                 }
             }
@@ -170,7 +216,8 @@ export function initPomodoroDrag() {
                 isRunning = false;
                 btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Resume';
                 localStorage.removeItem('pomodoro_expected_end');
-                delete window.lastMinutesRemaining;
+                cancelAllPomodoroNotifications();
+                delete window.lastNotificationTime;
             } else {
                 isRunning = true;
                 btnStart.innerHTML = '<i class="fa-solid fa-pause"></i> Pause';
@@ -178,6 +225,22 @@ export function initPomodoroDrag() {
                 
                 const expectedEnd = Date.now() + (timeLeft * 1000);
                 localStorage.setItem('pomodoro_expected_end', expectedEnd);
+                
+                if (scheduleMobileNotification) {
+                    scheduleMobileNotification(
+                        999993,
+                        isWorkSession ? 'Focus Session Finished!' : 'Break Time Finished!',
+                        isWorkSession ? 'Great focus! Time for a short break.' : 'Break over! Ready to focus on the next task?',
+                        expectedEnd,
+                        null,
+                        'pomodoro.mp3'
+                    );
+                }
+
+                if (timeLeft > 0 && updateMobileTimerNotification) {
+                    window.lastNotificationTime = timeLeft;
+                    updateMobileTimerNotification(isWorkSession, timeLeft);
+                }
 
                 timerInterval = setInterval(() => {
                     syncTimerWithTimePassed();
@@ -196,7 +259,8 @@ export function initPomodoroDrag() {
             if (progressPath) progressPath.style.stroke = 'var(--color-ticktick-blue)';
             if (btnStart) btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Start';
             localStorage.removeItem('pomodoro_expected_end');
-            delete window.lastMinutesRemaining;
+            cancelAllPomodoroNotifications();
+            delete window.lastNotificationTime;
             updateKnobByMinutes(25);
         });
     }

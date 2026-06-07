@@ -39,6 +39,7 @@ dirsToCopy.forEach(dir => {
 const BUNDLE_ORDER = [
     'js/utils.js',
     'js/db.js',
+    'js/notifications.js',
     'js/auth.js',
     'js/calendar.js',
     'js/timer.js',

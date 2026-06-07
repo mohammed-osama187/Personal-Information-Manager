@@ -1,4 +1,5 @@
 import { initAuth } from './auth.js';
+import { initMissedNotificationsUI } from './notifications.js';
 import { 
     initCustomSelect, 
     initCustomTimePicker, 
@@ -489,6 +490,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const initialLayout = localStorage.getItem('dashboardLayout') || 'list';
     setDashboardLayout(initialLayout);
     initSettings();
+    initMissedNotificationsUI();
     requestBatteryOptimization();
 
     // Every 60 s, re-sort the already-loaded task list so tasks move between

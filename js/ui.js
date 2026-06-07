@@ -1108,6 +1108,15 @@ export function shiftHabitCalendar(itemId, delta) {
 window.shiftHabitCalendar = shiftHabitCalendar;
 
 export function renderTaskCard(item, { isHistory = false, showHabitCalendar = true, showSubtasks = true } = {}) {
+    let typeBadgeHTML = '';
+    if (isHistory) {
+        const itemType = item.type || 'task';
+        let icon = 'fa-check-double';
+        if (itemType === 'event') icon = 'fa-calendar-day';
+        else if (itemType === 'habit') icon = 'fa-repeat';
+        typeBadgeHTML = `<span class="history-type-badge ${itemType}"><i class="fa-solid ${icon}"></i> ${itemType}</span>`;
+    }
+
     let timeInfo = item.startTime ? ` <i class="fa-regular fa-clock"></i> ${formatTaskTimeDisplay(item.startTime)}` : '';
     let freqText = '';
     
@@ -1319,7 +1328,7 @@ export function renderTaskCard(item, { isHistory = false, showHabitCalendar = tr
                 <div class="task-info-simple">
                     <span onclick="event.stopPropagation();">${checkboxHTML}</span>
                     <h4 class="task-item-title">
-                        ${item.title} ${flagIcon} ${progressBadge}
+                        ${typeBadgeHTML}${item.title} ${flagIcon} ${progressBadge}
                         <span style="font-size:12px; color:var(--text-muted); font-weight:normal;">${timeInfo} ${freqText}</span>
                         ${dueInfo}
                     </h4>
@@ -1373,7 +1382,7 @@ export function displayTasks() {
             h.isCompleted = !!(h.completedDates && h.completedDates.includes(todayStr));
         });
         const activeHabits = habits.sort((a, b) => b.createdAt - a.createdAt);
-        const historyItems = items.filter(t => (t.isCompleted || t.isCancelled || t.isDeleted) && t.type !== 'habit').sort((a, b) => b.createdAt - a.createdAt);
+        const historyItems = items.filter(t => (t.isCompleted || t.isCancelled || t.isDeleted) && (t.type !== 'habit' || t.isDeleted)).sort((a, b) => b.createdAt - a.createdAt);
 
         const repeatingHistoryItems = [];
         tasks.forEach(t => {
@@ -1395,7 +1404,33 @@ export function displayTasks() {
             }
         });
 
-        const combinedHistoryItems = [...historyItems, ...repeatingHistoryItems].sort((a, b) => b.createdAt - a.createdAt);
+        const allHabits = items.filter(i => i.type === 'habit');
+        allHabits.forEach(h => {
+            if (h.completedDates) {
+                h.completedDates.forEach(dateStr => {
+                    repeatingHistoryItems.push({
+                        ...h,
+                        id: h.id + '_completed_' + dateStr, 
+                        isCompleted: true,
+                        completedAtDate: dateStr, 
+                        title: h.title + ` (Completed ${dateStr})`,
+                        startDate: dateStr,
+                        dueDate: null, 
+                        isVirtualOccurrence: true,
+                        originalTaskId: h.id
+                    });
+                });
+            }
+        });
+
+        const combinedHistoryItems = [...historyItems, ...repeatingHistoryItems].sort((a, b) => {
+            const dateA = a.completedAtDate || a.startDate || '';
+            const dateB = b.completedAtDate || b.startDate || '';
+            if (dateA && dateB && dateA !== dateB) {
+                return dateB.localeCompare(dateA); // Sort by completion/occurrence date first
+            }
+            return b.createdAt - a.createdAt;
+        });
 
         if (pomodoroSelect) {
             const pomodoroOptions = document.getElementById('pomodoro-task-options');
@@ -1790,7 +1825,13 @@ export function deleteItem(id) {
                 });
             });
         } else {
-            showConfirm('Are you sure you want to delete this task?', () => {
+            const typeLabel = item.type === 'habit' ? 'habit' : (item.type === 'event' ? 'event' : 'task');
+            const confirmMsg = `Are you sure you want to delete this ${typeLabel}?`;
+            const toastMsg = item.type === 'habit' 
+                ? 'Habit deleted' 
+                : (item.type === 'event' ? 'Event moved to history' : 'Task moved to history');
+
+            showConfirm(confirmMsg, () => {
                 item.isDeleted = true;
                 item.isCompleted = false;
                 item.isCancelled = false;
@@ -1798,7 +1839,7 @@ export function deleteItem(id) {
                     if (scheduleItemNotifications) {
                         scheduleItemNotifications(item);
                     }
-                    showToast('Task moved to history', 'success', false);
+                    showToast(toastMsg, 'success', false);
                     displayTasks();
                     if (window.calendarInstance) window.calendarInstance.refetchEvents();
                 });

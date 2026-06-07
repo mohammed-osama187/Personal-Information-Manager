@@ -856,6 +856,34 @@ label {
     justify-content: center;
 }
 
+.history-type-badge {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+.history-type-badge.task {
+    background-color: rgba(47, 123, 246, 0.12);
+    color: var(--color-ticktick-blue);
+    border: 1px solid rgba(47, 123, 246, 0.2);
+}
+.history-type-badge.event {
+    background-color: rgba(186, 116, 255, 0.12);
+    color: #BA74FF;
+    border: 1px solid rgba(186, 116, 255, 0.2);
+}
+.history-type-badge.habit {
+    background-color: rgba(255, 169, 64, 0.12);
+    color: #FFA940;
+    border: 1px solid rgba(255, 169, 64, 0.2);
+}
+
 .empty-state {
     color: var(--text-muted);
     text-align: center;

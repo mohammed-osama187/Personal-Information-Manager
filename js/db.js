@@ -38,6 +38,11 @@ let isFetchingBackgroundTasks = false;
 async function fetchAndCacheTasksFromFirebase(currentUserId, cachedItems) {
     if (isFetchingBackgroundTasks) return;
     if (!db) return;
+    if (!navigator.onLine) return;
+    if (getOfflineQueue().length > 0) {
+        console.log("[db] Offline queue is not empty. Skipping background fetch to prevent cache overwrite.");
+        return;
+    }
     isFetchingBackgroundTasks = true;
 
     try {
@@ -298,15 +303,23 @@ export async function deleteTaskFromFirebase(id) {
         let guestTasks = JSON.parse(localStorage.getItem('guest_tasks')) || [];
         guestTasks = guestTasks.filter(t => String(t.id) !== String(id));
         localStorage.setItem('guest_tasks', JSON.stringify(guestTasks));
+        
+        window.dispatchEvent(new CustomEvent('flowtick-data-changed'));
+        if (window.calendarInstance) window.calendarInstance.refetchEvents();
         return;
     }
 
     if (String(id).startsWith('offline_')) {
         removeFromOfflineSaveQueue(id);
+        window.dispatchEvent(new CustomEvent('flowtick-data-changed'));
+        if (window.calendarInstance) window.calendarInstance.refetchEvents();
         return;
     }
 
     runBackgroundDelete(id);
+
+    window.dispatchEvent(new CustomEvent('flowtick-data-changed'));
+    if (window.calendarInstance) window.calendarInstance.refetchEvents();
 }
 
 export async function syncGuestDataToFirebase(userId) {

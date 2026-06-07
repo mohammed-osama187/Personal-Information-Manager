@@ -33,8 +33,7 @@
                     <label>Password</label>
                     <div class="password-field-wrapper">
                         <input type="password" id="login-password" placeholder="Enter your password" required>
-                        <i class="fa-solid fa-eye-slash toggle-password-icon"
-                            onclick="togglePasswordVisibility('login-password', this)"></i>
+                        <i class="fa-solid fa-eye-slash toggle-password-icon" data-toggle="login-password"></i>
                     </div>
                 </div>
                 <div style="text-align: right; margin-top: -10px; margin-bottom: 16px;">
@@ -44,10 +43,10 @@
                 </div>
                 <button type="submit" class="btn btn-primary btn-block">Log In</button>
                 <div class="auth-toggle">
-                    Don't have an account? <span onclick="toggleAuth('signup')">Sign Up</span>
+                    Don't have an account? <span class="auth-toggle-link" data-auth-target="signup">Sign Up</span>
                 </div>
                 <div style="text-align: center; margin-top: 16px;">
-                    <a href="#" class="continue-guest-btn" onclick="closeAuthScreen(event)"
+                    <a href="#" class="continue-guest-btn"
                         style="font-size: 13px; color: var(--text-muted); text-decoration: none; font-weight: 500;">Continue
                         as Guest</a>
                 </div>
@@ -70,8 +69,7 @@
                     <label>Password</label>
                     <div class="password-field-wrapper">
                         <input type="password" id="signup-password" placeholder="Create a password" required>
-                        <i class="fa-solid fa-eye-slash toggle-password-icon"
-                            onclick="togglePasswordVisibility('signup-password', this)"></i>
+                        <i class="fa-solid fa-eye-slash toggle-password-icon" data-toggle="signup-password"></i>
                     </div>
                 </div>
                 <div class="form-group">
@@ -79,16 +77,15 @@
                     <div class="password-field-wrapper">
                         <input type="password" id="signup-confirm-password" placeholder="Confirm your password"
                             required>
-                        <i class="fa-solid fa-eye-slash toggle-password-icon"
-                            onclick="togglePasswordVisibility('signup-confirm-password', this)"></i>
+                        <i class="fa-solid fa-eye-slash toggle-password-icon" data-toggle="signup-confirm-password"></i>
                     </div>
                 </div>
                 <button type="submit" class="btn btn-primary btn-block">Sign Up</button>
                 <div class="auth-toggle">
-                    Already have an account? <span onclick="toggleAuth('login')">Log In</span>
+                    Already have an account? <span class="auth-toggle-link" data-auth-target="login">Log In</span>
                 </div>
                 <div style="text-align: center; margin-top: 16px;">
-                    <a href="#" class="continue-guest-btn" onclick="closeAuthScreen(event)"
+                    <a href="#" class="continue-guest-btn"
                         style="font-size: 13px; color: var(--text-muted); text-decoration: none; font-weight: 500;">Continue
                         as Guest</a>
                 </div>
@@ -135,28 +132,15 @@
 
         <main class="main-content">
 
-            <button id="hamburger-btn" class="floating-btn hamburger-btn"><i class="fa-solid fa-bars"></i></button>
-            <div class="notification-container">
-                <button id="notification-btn" class="notif-btn" title="Missed Notifications">
-                    <i class="fa-solid fa-bell"></i>
-                    <span id="notification-badge" class="notif-badge" style="display: none;">0</span>
-                </button>
-                <div id="notification-dropdown" class="notification-dropdown">
-                    <div class="notif-header">
-                        <span>Missed Notifications</span>
-                        <button id="clear-notifications-btn" class="btn-clear-notif">Clear All</button>
-                    </div>
-                    <div id="notif-list" class="notif-list">
-                        <div class="no-notif">No missed notifications</div>
-                    </div>
-                </div>
+            <div class="top-nav-bar">
+                <button id="hamburger-btn" class="nav-icon-btn" title="Open Menu"><i
+                        class="fa-solid fa-bars"></i></button>
+                <span id="active-page-title" class="active-page-title">Tasks</span>
             </div>
-            <button id="theme-toggle" class="floating-btn theme-btn"><i class="fa-solid fa-moon"></i></button>
 
             <section id="tasks-page" class="page-section active">
                 <header class="page-header flex-header">
                     <div>
-                        <h1 id="dashboard-title">My Dashboard</h1>
                         <p>Track your upcoming, current, and overdue tasks live.</p>
                     </div>
                     <div style="display: flex; gap: 12px; align-items: center;">
@@ -173,7 +157,7 @@
                 </header>
 
                 <div class="task-controls-bar"
-                    style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; align-items: center; justify-content: space-between;">
+                    style="display: flex; flex-wrap: nowrap; gap: 12px; margin-bottom: 20px; align-items: center; justify-content: space-between;">
                     <div class="filter-group desktop-only-filters" style="display: flex; gap: 8px; flex-wrap: wrap;">
                         <button class="btn-filter active" data-filter="all">All</button>
                         <button class="btn-filter" data-filter="today">Today</button>
@@ -184,7 +168,8 @@
                         <button class="btn-filter" data-filter="custom">Custom</button>
                     </div>
                     <div class="filter-group mobile-only-filters" style="display: none; align-items: center; gap: 8px;">
-                        <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Filter:</span>
+                        <i class="fa-solid fa-filter" style="color: var(--text-muted); font-size: 14px;"
+                            title="Filter"></i>
                         <div class="custom-select-wrapper" id="task-filter-wrapper"
                             style="width: 140px; margin-bottom: 0;">
                             <div class="custom-select-display" id="task-filter-display"
@@ -204,7 +189,10 @@
                         </div>
                     </div>
                     <div class="sort-group" style="display: flex; align-items: center; gap: 8px;">
-                        <span style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Sort By:</span>
+                        <span class="sort-label-text"
+                            style="font-size: 13px; color: var(--text-muted); font-weight: 500;">Sort By:</span>
+                        <i class="fa-solid fa-arrow-down-wide-short sort-label-icon"
+                            style="display: none; color: var(--text-muted); font-size: 14px;" title="Sort By"></i>
                         <div class="custom-select-wrapper" id="task-sort-wrapper"
                             style="width: 140px; margin-bottom: 0;">
                             <div class="custom-select-display" id="task-sort-display"
@@ -231,7 +219,6 @@
             <section id="habits-page" class="page-section">
                 <header class="page-header flex-header">
                     <div>
-                        <h1>Habit Tracker</h1>
                         <p>Daily routines you want to stick to.</p>
                     </div>
                     <button class="btn btn-primary open-modal-btn" data-type="habit"><i class="fa-solid fa-plus"></i>
@@ -244,8 +231,7 @@
 
             <section id="history-page" class="page-section">
                 <header class="page-header">
-                    <h1>History</h1>
-                    <p>Tasks and events you have successfully completed.</p>
+                    <p style="margin-bottom: 10px;">Tasks and events you have successfully completed.</p>
                 </header>
                 <div class="card tasks-list-card">
                     <div id="history-tasks" class="tasks-container"></div>
@@ -255,7 +241,6 @@
             <section id="calendar-page" class="page-section">
                 <header class="page-header flex-header">
                     <div>
-                        <h1>Calendar</h1>
                         <p>Your scheduled events and deadlines.</p>
                     </div>
                     <button class="btn btn-primary open-modal-btn" data-type="event"><i
@@ -268,7 +253,6 @@
 
             <section id="pomodoro-page" class="page-section">
                 <header class="page-header">
-                    <h1>Interactive Pomodoro</h1>
                     <p>Select a task, set your focus time, and begin.</p>
                 </header>
                 <div class="pomodoro-wrapper">
@@ -331,8 +315,7 @@
 
             <section id="settings-page" class="page-section">
                 <header class="page-header">
-                    <h1>Settings</h1>
-                    <p>Manage your account preferences and data.</p>
+                    <p style="margin-bottom: 10px;">Manage your account preferences and data.</p>
                 </header>
 
                 <div class="card">
@@ -404,6 +387,44 @@
                                 </div>
                             </div>
                         </div>
+
+                        <div class="form-row" style="margin-top: 16px; gap: 16px;">
+                            <div class="form-group" style="margin-bottom: 0; width: 100%;">
+                                <label
+                                    style="font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 12px;">App
+                                    Theme</label>
+                                <div class="theme-options-container" style="display: flex; gap: 16px; width: 100%;">
+                                    <div class="theme-option-card" data-value="dark"
+                                        style="flex: 1; display: flex; flex-direction: column; align-items: center; cursor: pointer; border: 2px solid var(--border-color); border-radius: 16px; padding: 12px; transition: all 0.2s ease; background: var(--item-bg);">
+                                        <div class="theme-square"
+                                            style="width: 45px; height: 45px; border-radius: 10px; background-color: #000000; border: 1px solid #333333; margin-bottom: 8px;">
+                                        </div>
+                                        <span
+                                            style="font-size: 12px; font-weight: 600; color: var(--text-main); text-align: center;">Dark
+                                            Mode</span>
+                                    </div>
+                                    <div class="theme-option-card" data-value="system"
+                                        style="flex: 1; display: flex; flex-direction: column; align-items: center; cursor: pointer; border: 2px solid var(--border-color); border-radius: 16px; padding: 12px; transition: all 0.2s ease; background: var(--item-bg);">
+                                        <div class="theme-square"
+                                            style="width: 45px; height: 45px; border-radius: 10px; background: linear-gradient(135deg, #FFFFFF 50%, #000000 50%); border: 1px solid #E0E0E0; margin-bottom: 8px;">
+                                        </div>
+                                        <span
+                                            style="font-size: 12px; font-weight: 600; color: var(--text-main); text-align: center;">System
+                                            Default</span>
+                                    </div>
+                                    <div class="theme-option-card" data-value="light"
+                                        style="flex: 1; display: flex; flex-direction: column; align-items: center; cursor: pointer; border: 2px solid var(--border-color); border-radius: 16px; padding: 12px; transition: all 0.2s ease; background: var(--item-bg);">
+                                        <div class="theme-square"
+                                            style="width: 45px; height: 45px; border-radius: 10px; background-color: #FFFFFF; border: 1px solid #E0E0E0; margin-bottom: 8px;">
+                                        </div>
+                                        <span
+                                            style="font-size: 12px; font-weight: 600; color: var(--text-main); text-align: center;">Light
+                                            Mode</span>
+                                    </div>
+                                </div>
+                                <input type="hidden" id="pref-theme" value="system">
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -416,7 +437,7 @@
                                 <div class="password-field-wrapper">
                                     <input type="password" id="current-password" required>
                                     <i class="fa-solid fa-eye-slash toggle-password-icon"
-                                        onclick="togglePasswordVisibility('current-password', this)"></i>
+                                        data-toggle="current-password"></i>
                                 </div>
                             </div>
                             <div class="form-group">
@@ -424,7 +445,7 @@
                                 <div class="password-field-wrapper">
                                     <input type="password" id="new-password" required>
                                     <i class="fa-solid fa-eye-slash toggle-password-icon"
-                                        onclick="togglePasswordVisibility('new-password', this)"></i>
+                                        data-toggle="new-password"></i>
                                 </div>
                             </div>
                         </div>
@@ -444,7 +465,6 @@
 
             <section id="stats-page" class="page-section">
                 <header class="page-header">
-                    <h1>Productivity Stats</h1>
                     <p>Observe your performance, streak values, and focus session stats.</p>
                 </header>
                 <div id="stats-container" class="stats-container-grid">
@@ -454,7 +474,6 @@
 
             <section id="about-page" class="page-section">
                 <header class="page-header">
-                    <h1>About FlowTick</h1>
                     <p>Learn more about our mission and application.</p>
                 </header>
                 <div class="card about-card"
@@ -468,7 +487,7 @@
                                 style="font-size: 24px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; letter-spacing: -0.5px;">
                                 FlowTick</h2>
                             <p style="font-size: 13.5px; color: var(--color-ticktick-blue); font-weight: 600;">Personal
-                                Information Manager • v1.2.0</p>
+                                Information Manager • v2.0</p>
                         </div>
                     </div>
 
@@ -836,27 +855,42 @@
     <!-- Custom Date Filter Modal -->
     <div id="custom-filter-modal" class="modal" style="z-index: 1015;">
         <div class="modal-content" style="max-width: 400px; border-radius: 24px; padding: 24px;">
-            <div class="modal-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                <h3 style="font-size: 18px; font-weight: 700; color: var(--text-main); margin: 0; display: flex; align-items: center; gap: 8px;">
-                    <i class="fa-solid fa-calendar-days" style="color: var(--color-ticktick-blue);"></i> Custom Date Range
+            <div class="modal-header"
+                style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <h3
+                    style="font-size: 18px; font-weight: 700; color: var(--text-main); margin: 0; display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-calendar-days" style="color: var(--color-ticktick-blue);"></i> Custom Date
+                    Range
                 </h3>
-                <button id="close-custom-filter-modal" class="close-btn" style="background: none; border: none; font-size: 18px; color: var(--text-muted); cursor: pointer;"><i class="fa-solid fa-xmark"></i></button>
+                <button id="close-custom-filter-modal" class="close-btn"
+                    style="background: none; border: none; font-size: 18px; color: var(--text-muted); cursor: pointer;"><i
+                        class="fa-solid fa-xmark"></i></button>
             </div>
-            <form id="custom-filter-form" onsubmit="event.preventDefault();" style="display: flex; flex-direction: column; width: 100%;">
+            <form id="custom-filter-form" onsubmit="event.preventDefault();"
+                style="display: flex; flex-direction: column; width: 100%;">
                 <div class="form-group" style="margin-bottom: 16px; text-align: left; width: 100%;">
-                    <label style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Start Date</label>
-                    <input type="date" id="filter-start-date" required style="width: 100%; padding: 10px 16px; border-radius: 30px; border: 1px solid var(--border-color); background-color: var(--bg-notion-sidebar); color: var(--text-main); font-size: 14.5px; box-sizing: border-box;">
+                    <label
+                        style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">Start
+                        Date</label>
+                    <input type="date" id="filter-start-date" required
+                        style="width: 100%; padding: 10px 16px; border-radius: 30px; border: 1px solid var(--border-color); background-color: var(--bg-notion-sidebar); color: var(--text-main); font-size: 14.5px; box-sizing: border-box;">
                 </div>
                 <div class="form-group" style="margin-bottom: 20px; text-align: left; width: 100%;">
-                    <label style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">End Date</label>
-                    <input type="date" id="filter-end-date" required style="width: 100%; padding: 10px 16px; border-radius: 30px; border: 1px solid var(--border-color); background-color: var(--bg-notion-sidebar); color: var(--text-main); font-size: 14.5px; box-sizing: border-box;">
+                    <label
+                        style="display: block; font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px;">End
+                        Date</label>
+                    <input type="date" id="filter-end-date" required
+                        style="width: 100%; padding: 10px 16px; border-radius: 30px; border: 1px solid var(--border-color); background-color: var(--bg-notion-sidebar); color: var(--text-main); font-size: 14.5px; box-sizing: border-box;">
                 </div>
-                <div id="custom-filter-error" style="color: #FF4D4F; font-size: 13px; margin-top: -10px; margin-bottom: 16px; display: none; text-align: left; font-weight: 500;">
+                <div id="custom-filter-error"
+                    style="color: #FF4D4F; font-size: 13px; margin-top: -10px; margin-bottom: 16px; display: none; text-align: left; font-weight: 500;">
                     <i class="fa-solid fa-circle-info"></i> End date cannot be before start date.
                 </div>
                 <div style="display: flex; gap: 12px; justify-content: flex-end; width: 100%;">
-                    <button type="button" id="custom-filter-cancel" class="btn btn-secondary" style="border-radius: 30px; padding: 8px 20px; font-size: 13.5px;">Cancel</button>
-                    <button type="submit" id="custom-filter-apply" class="btn btn-primary" style="border-radius: 30px; padding: 8px 20px; font-size: 13.5px;">Apply Filter</button>
+                    <button type="button" id="custom-filter-cancel" class="btn btn-secondary"
+                        style="border-radius: 30px; padding: 8px 20px; font-size: 13.5px;">Cancel</button>
+                    <button type="submit" id="custom-filter-apply" class="btn btn-primary"
+                        style="border-radius: 30px; padding: 8px 20px; font-size: 13.5px;">Apply Filter</button>
                 </div>
             </form>
         </div>
@@ -864,24 +898,20 @@
 
     <div id="toast-container" class="toast-container"></div>
 
-    <script src="js/app.js"></script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('sw.js').then((reg) => {
-                    console.log('[FlowTick SW] Registered successfully with scope:', reg.scope);
-                }).catch((err) => {
-                    console.error('[FlowTick SW] Registration failed:', err);
-                });
-            });
-        }
-    </script>
+    <!-- Firebase SDK — must stay type="module" to import from CDN.
+         All Firebase APIs are exposed on window so bundle.js can use them
+         as plain globals without ES6 imports (required for file:// opening). -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore, collection, addDoc, doc, updateDoc, getDocs, deleteDoc, getDoc, query, where, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-        // استدعاء مكتبة المصادقة (Authentication) كاملة
-        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, updatePassword, EmailAuthProvider, reauthenticateWithCredential, updateProfile } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        import {
+            getFirestore, collection, addDoc, doc, updateDoc, getDocs,
+            deleteDoc, getDoc, query, where, enableIndexedDbPersistence
+        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import {
+            getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+            signOut, onAuthStateChanged, sendPasswordResetEmail, updatePassword,
+            EmailAuthProvider, reauthenticateWithCredential, updateProfile
+        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCGU9sUd4lj8_vdStcBd_DtYauvktlEKeA",
@@ -895,41 +925,47 @@
         const app = initializeApp(firebaseConfig);
 
         window.db = getFirestore(app);
+        window.auth = getAuth(app);
 
-        // Enable offline persistence: tasks load from IndexedDB when there is no internet.
-        // Writes are queued and automatically synced when connectivity returns.
         enableIndexedDbPersistence(window.db).catch((err) => {
             if (err.code === 'failed-precondition') {
-                // Multiple tabs open — only one tab can use offline persistence at a time.
                 console.warn('[Firestore] Offline persistence unavailable: multiple tabs open.');
             } else if (err.code === 'unimplemented') {
-                // The current browser / WebView does not support IndexedDB.
-                console.warn('[Firestore] Offline persistence not supported in this environment.');
+                console.warn('[Firestore] Offline persistence not supported in this browser.');
             }
         });
-        window.collection = collection;
-        window.addDoc = addDoc;
-        window.doc = doc;
-        window.updateDoc = updateDoc;
-        window.getDocs = getDocs;
-        window.deleteDoc = deleteDoc;
-        window.getDoc = getDoc;
-        window.query = query;
+
+        // Firestore helpers
+        window.collection = collection; window.addDoc = addDoc;
+        window.doc = doc; window.updateDoc = updateDoc;
+        window.getDocs = getDocs; window.deleteDoc = deleteDoc;
+        window.getDoc = getDoc; window.query = query;
         window.where = where;
 
-        // تهيئة المصادقة وتصدير دوالها لملف app.js
-        window.auth = getAuth(app);
+        // Auth helpers
         window.createUserWithEmailAndPassword = createUserWithEmailAndPassword;
         window.signInWithEmailAndPassword = signInWithEmailAndPassword;
         window.signOut = signOut;
         window.onAuthStateChanged = onAuthStateChanged;
-
-        // الدوال الجديدة الخاصة بكلمة المرور والملف الشخصي
         window.sendPasswordResetEmail = sendPasswordResetEmail;
         window.updatePassword = updatePassword;
         window.EmailAuthProvider = EmailAuthProvider;
         window.reauthenticateWithCredential = reauthenticateWithCredential;
         window.updateProfile = updateProfile;
+    </script>
+
+    <!-- App bundle: all JS merged into one non-module file (works via file://) -->
+    <script src="js/bundle.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').then((reg) => {
+                    console.log('[FlowTick SW] Registered successfully with scope:', reg.scope);
+                }).catch((err) => {
+                    console.error('[FlowTick SW] Registration failed:', err);
+                });
+            });
+        }
     </script>
 </body>
 

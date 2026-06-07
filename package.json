@@ -1,4 +1,9 @@
 {
+  "scripts": {
+    "start": "node serve.js",
+    "build": "node build.js",
+    "sync": "node build.js && node node_modules/@capacitor/cli/bin/capacitor sync"
+  },
   "dependencies": {
     "@capacitor/android": "^8.3.4",
     "@capacitor/background-runner": "^3.0.0",

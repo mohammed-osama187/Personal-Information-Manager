@@ -1,4 +1,5 @@
 import { initAuth } from './auth.js';
+import { initMissedNotificationsUI } from './notifications.js';
 import { 
     initCustomSelect, 
     initCustomTimePicker, 
@@ -10,7 +11,7 @@ import {
 import { initPomodoroDrag } from './timer.js';
 import { initCalendar } from './calendar.js';
 import { syncOfflineQueue } from './db.js';
-import { parseLocalISOString, applyThemePreference } from './utils.js';
+import { parseLocalISOString } from './utils.js';
 
 // Immediate synchronous routing check to eliminate auth screen page flash
 (function() {
@@ -45,109 +46,52 @@ function initSidebar() {
     menuItems.forEach(item => item.addEventListener('click', closeSidebar));
 }
 
-window.navHistory = ['tasks-page'];
+function initThemeToggle() {
+    const toggleBtn = document.getElementById('theme-toggle');
+    if (!toggleBtn) return;
+    
+    if (localStorage.getItem('theme') === 'dark') {
+        document.body.classList.add('dark-theme');
+        toggleBtn.innerHTML = '<i class="fa-solid fa-sun"></i>';
+    } else {
+        toggleBtn.innerHTML = '<i class="fa-solid fa-moon"></i>';
+    }
 
-export function navigateToPage(targetPage, pushToHistory = true) {
-    const menuItems = document.querySelectorAll('.menu-item');
-    const pages = document.querySelectorAll('.page-section');
-
-    // 1. Update menu items active class
-    menuItems.forEach(item => {
-        if (item.getAttribute('data-target') === targetPage) {
-            item.classList.add('active');
+    toggleBtn.addEventListener('click', () => {
+        document.body.classList.toggle('dark-theme');
+        if (document.body.classList.contains('dark-theme')) {
+            localStorage.setItem('theme', 'dark');
+            toggleBtn.innerHTML = '<i class="fa-solid fa-sun"></i>';
         } else {
-            item.classList.remove('active');
+            localStorage.setItem('theme', 'light');
+            toggleBtn.innerHTML = '<i class="fa-solid fa-moon"></i>';
         }
     });
-
-    // 2. Update page sections active class
-    pages.forEach(p => {
-        if (p.getAttribute('id') === targetPage) {
-            p.classList.add('active');
-        } else {
-            p.classList.remove('active');
-        }
-    });
-
-    // 3. Update active page title
-    const activePageTitle = document.getElementById('active-page-title');
-    if (activePageTitle) {
-        const pageTitles = {
-            'tasks-page': 'Tasks',
-            'habits-page': 'Habits',
-            'calendar-page': 'Calendar',
-            'history-page': 'History',
-            'pomodoro-page': 'Focus Timer',
-            'stats-page': 'Stats',
-            'settings-page': 'Settings',
-            'about-page': 'About Us'
-        };
-        activePageTitle.textContent = pageTitles[targetPage] || 'FlowTick';
-    }
-
-    // 4. Trigger target page actions
-    if (targetPage === 'calendar-page' && window.calendarInstance) {
-        setTimeout(() => window.calendarInstance.updateSize(), 100);
-    }
-    if (targetPage === 'stats-page') {
-        if (typeof window.renderStatsPage === 'function') {
-            window.renderStatsPage();
-        }
-    }
-
-    // 5. Track history
-    if (pushToHistory) {
-        const currentTop = window.navHistory[window.navHistory.length - 1];
-        if (currentTop !== targetPage) {
-            window.navHistory.push(targetPage);
-        }
-    }
 }
-window.navigateToPage = navigateToPage;
 
 function initRouter() {
     const menuItems = document.querySelectorAll('.menu-item');
+    const pages = document.querySelectorAll('.page-section');
+
     menuItems.forEach(item => {
         item.addEventListener('click', () => {
+            menuItems.forEach(i => i.classList.remove('active'));
+            pages.forEach(p => p.classList.remove('active'));
+
+            item.classList.add('active');
             const targetPage = item.getAttribute('data-target');
-            if (targetPage) {
-                navigateToPage(targetPage, true);
+            document.getElementById(targetPage).classList.add('active');
+
+            if (targetPage === 'calendar-page' && window.calendarInstance) {
+                setTimeout(() => window.calendarInstance.updateSize(), 100);
+            }
+            if (targetPage === 'stats-page') {
+                import('./ui.js').then(module => {
+                    module.renderStatsPage();
+                });
             }
         });
     });
-}
-
-function initBackButtonHandler() {
-    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
-        window.Capacitor.Plugins.App.addListener('backButton', () => {
-            // 1. Close sidebar overlay if active
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebar-overlay');
-            if (sidebar && sidebar.classList.contains('active')) {
-                sidebar.classList.remove('active');
-                overlay.classList.remove('active');
-                return;
-            }
-
-            // 2. Close active modals
-            const activeModals = document.querySelectorAll('.modal.active');
-            if (activeModals.length > 0) {
-                activeModals.forEach(modal => modal.classList.remove('active'));
-                return;
-            }
-
-            // 3. Go back in history
-            if (window.navHistory && window.navHistory.length > 1) {
-                window.navHistory.pop(); // Pop current page
-                const prevPage = window.navHistory[window.navHistory.length - 1];
-                navigateToPage(prevPage, false);
-                return;
-            }
-
-            // 4. Default native exit
-            window.Capacitor.Plugins.App.exitApp();
-        });
-    }
 }
 
 async function requestBatteryOptimization() {
@@ -189,20 +133,20 @@ function checkIfDashboardNeedsUpdate() {
 }
 
 function initDatabase() {
-    displayTasks();
+    displayTasks(); 
     initCalendar();
 
-    // Poll until the Firebase globals are injected by the <script type="module"> in index.html.
-    // `db` is declared as a global var in bundle.js and populated by that inline module.
     const checkFb = setInterval(() => {
-        if (db) {
-            clearInterval(checkFb);
-            displayTasks();
-            syncOfflineQueue();
-            if (window.calendarInstance) {
-                window.calendarInstance.refetchEvents();
+        import('./firebase.js').then(module => {
+            if (module.db) {
+                clearInterval(checkFb);
+                displayTasks();
+                syncOfflineQueue();
+                if (window.calendarInstance) {
+                    window.calendarInstance.refetchEvents();
+                }
             }
-        }
+        });
     }, 100);
 }
 
@@ -221,10 +165,9 @@ document.addEventListener('click', (e) => {
 
 document.addEventListener('DOMContentLoaded', () => {
     initAuth(); 
-    applyThemePreference(localStorage.getItem('theme') || 'system');
+    initThemeToggle();
     initSidebar();
     initRouter();
-    initBackButtonHandler();
     initDatabase();
 
     // Initialize premium custom dropdowns and pickers
@@ -489,15 +432,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const initialLayout = localStorage.getItem('dashboardLayout') || 'list';
     setDashboardLayout(initialLayout);
     initSettings();
-    requestBatteryOptimization();
+    initMissedNotificationsUI(); 
+    requestBatteryOptimization(); 
 
-    // Every 60 s, re-sort the already-loaded task list so tasks move between
-    // "current" / "overdue" / "upcoming" columns as time passes.
-    // We call sortAndRenderDashboard() rather than displayTasks() to avoid
-    // an unnecessary Firebase round-trip for a pure time-based re-categorisation.
+    if (window.pendingNotificationId) {
+        const notifId = window.pendingNotificationId;
+        delete window.pendingNotificationId;
+        setTimeout(() => {
+            if (window.handleNotificationAction) {
+                window.handleNotificationAction(notifId);
+            }
+        }, 800);
+    }
+
     setInterval(() => {
-        if (checkIfDashboardNeedsUpdate() && typeof window.sortAndRenderDashboard === 'function') {
-            window.sortAndRenderDashboard();
+        if (checkIfDashboardNeedsUpdate()) {
+            displayTasks();
         }
     }, 60000);
 });

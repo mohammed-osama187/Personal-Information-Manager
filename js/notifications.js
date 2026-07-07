@@ -386,6 +386,10 @@ export function scheduleMobileNotification(id, title, body, triggerTime, frequen
     // جدولة الإشعار على المتصفح باستخدام setTimeout
     if (delayMs > 0) {
         setTimeout(() => {
+            // تشغيل الصوت المبرمج في utils.js بالتزامن مع الإشعار
+            if (typeof playSound === 'function') {
+                playSound('success');
+            }
             if (window.Notification && Notification.permission === "granted") {
                 new Notification(title, { body: body });
             } else {

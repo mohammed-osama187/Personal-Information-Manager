@@ -1002,6 +1002,9 @@ export function initFormSubmit(modal) {
             }
 
             saveTaskToFirebase(dataItem).then(() => {
+                if (window.scheduleItemNotifications) {
+                    window.scheduleItemNotifications(dataItem);
+                }
                 finishSubmit(editId ? 'Updated successfully!' : 'Saved successfully!', false);
             }).catch(e => {
                 console.error(e);

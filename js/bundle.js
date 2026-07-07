@@ -898,6 +898,10 @@ function scheduleMobileNotification(id, title, body, triggerTime, frequency, sou
     // جدولة الإشعار على المتصفح باستخدام setTimeout
     if (delayMs > 0) {
         setTimeout(() => {
+            // تشغيل الصوت المبرمج في utils.js بالتزامن مع الإشعار
+            if (typeof playSound === 'function') {
+                playSound('success');
+            }
             if (window.Notification && Notification.permission === "granted") {
                 new Notification(title, { body: body });
             } else {
@@ -2698,6 +2702,9 @@ function initFormSubmit(modal) {
             }
 
             saveTaskToFirebase(dataItem).then(() => {
+                if (window.scheduleItemNotifications) {
+                    window.scheduleItemNotifications(dataItem);
+                }
                 finishSubmit(editId ? 'Updated successfully!' : 'Saved successfully!', false);
             }).catch(e => {
                 console.error(e);

@@ -904,8 +904,8 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import {
-            getFirestore, collection, addDoc, doc, updateDoc, getDocs,
-            deleteDoc, getDoc, query, where, enableIndexedDbPersistence
+            initializeFirestore, persistentLocalCache, persistentSingleTabManager,
+            collection, addDoc, doc, updateDoc, getDocs, deleteDoc, getDoc, query, where
         } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
         import {
             getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
@@ -924,16 +924,10 @@
 
         const app = initializeApp(firebaseConfig);
 
-        window.db = getFirestore(app);
-        window.auth = getAuth(app);
-
-        enableIndexedDbPersistence(window.db).catch((err) => {
-            if (err.code === 'failed-precondition') {
-                console.warn('[Firestore] Offline persistence unavailable: multiple tabs open.');
-            } else if (err.code === 'unimplemented') {
-                console.warn('[Firestore] Offline persistence not supported in this browser.');
-            }
+        window.db = initializeFirestore(app, {
+            localCache: persistentLocalCache({ tabManager: persistentSingleTabManager() })
         });
+        window.auth = getAuth(app);
 
         // Firestore helpers
         window.collection = collection; window.addDoc = addDoc;

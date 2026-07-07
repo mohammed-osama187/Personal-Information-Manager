@@ -309,7 +309,22 @@ export function initMissedNotificationsUI() {
 
 export function scheduleMobileNotification(id, title, body, triggerTime, frequency, soundName) {
     const delayMs = new Date(triggerTime).getTime() - Date.now();
-    if (delayMs <= 0 && !frequency) return;
+    
+    if (delayMs <= 0 && !frequency) {
+        // إذا كان الميعاد قد فات منذ أقل من دقيقتين، نطلقه فوراً للمستخدم
+        if (delayMs >= -120000) {
+            console.log(`[MobileBridge] Notification missed recently (${Math.abs(delayMs)}ms ago). Triggering immediately.`);
+            return scheduleMobileNotification(id, title, body, new Date(Date.now() + 50), frequency, soundName);
+        } else {
+            // إذا كان قديماً، نضيفه لقائمة الإشعارات الفائتة مباشرة
+            console.log(`[MobileBridge] Notification missed. Adding to missed list.`);
+            const tDate = new Date(triggerTime);
+            const hours = String(tDate.getHours()).padStart(2, '0');
+            const mins = String(tDate.getMinutes()).padStart(2, '0');
+            addMissedNotification(`Overdue: ${title}`, `${hours}:${mins}`, 'overdue');
+            return;
+        }
+    }
 
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
         const scheduleOpts = { at: new Date(triggerTime), allowWhileIdle: true };
@@ -331,34 +346,54 @@ export function scheduleMobileNotification(id, title, body, triggerTime, frequen
         const soundBase = sound.replace('.mp3', '');
         const channelId = `flowtick-${soundBase}-channel-v6`;
 
-        window.Capacitor.Plugins.LocalNotifications.createChannel({
-            id: channelId,
-            name: `FlowTick ${soundBase.charAt(0).toUpperCase() + soundBase.slice(1)} Alerts`,
-            importance: 5,
-            sound: soundBase, // Android requires resource name without extension
-            visibility: 1
-        }).then(() => {
-            const notifId = Math.abs(parseInt(id));
-            if (!notifId) return;
-            window.Capacitor.Plugins.LocalNotifications.schedule({
-                notifications: [{
-                    id: notifId,
-                    title: title,
-                    body: body,
-                    schedule: scheduleOpts,
-                    sound: soundBase, // Android requires resource name without extension
-                    channelId: channelId,
-                    ongoing: false,
-                    autoCancel: true,
-                    foreground: true,
-                    actionTypeId: '',
-                    extra: null
-                }]
-            });
-        });
+        // تحويل أمن للـ ID لضمان أنه رقم صحيح دائماً ولا يعطي NaN
+        let notifId = parseInt(id, 10);
+        if (isNaN(notifId)) {
+            // لو الـ ID نصي، بنعمل له Hash رقمي سريع
+            notifId = Math.abs(String(id).split("").reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0));
+        } else {
+            notifId = Math.abs(notifId);
+        }
+
+        // جدول الإشعار مباشرة، الـ Channels متكريتة فوق أول ما الملف بيفتح
+        window.Capacitor.Plugins.LocalNotifications.schedule({
+            notifications: [{
+                id: notifId,
+                title: title,
+                body: body,
+                schedule: scheduleOpts,
+                sound: soundBase,
+                channelId: channelId,
+                ongoing: false,
+                autoCancel: true,
+                foreground: true,
+                actionTypeId: '',
+                extra: null
+            }]
+        }).catch(err => console.error("Schedule error:", err));
+        
         return;
     }
+
+    // الـ Fallback الخاص بالمتصفح (اللاب توب)
     console.log(`[MobileBridge] Web fallback. Delay: ${delayMs}ms`);
+    
+    // طلب إذن الإشعارات من المتصفح لو مش مسموح بيه
+    if (window.Notification && Notification.permission === "default") {
+        Notification.requestPermission();
+    }
+
+    // جدولة الإشعار على المتصفح باستخدام setTimeout
+    if (delayMs > 0) {
+        setTimeout(() => {
+            if (window.Notification && Notification.permission === "granted") {
+                new Notification(title, { body: body });
+            } else {
+                // لو المتصفح حاقب الإشعارات، اظهرها كـ alert عادي للتيست
+                alert(`[Notification] ${title}: ${body}`);
+            }
+        }, delayMs);
+    }
 }
 
 export function updateMobileTimerNotification(isWork, timeLeft) {
@@ -414,14 +449,16 @@ window.cancelMobileNotification = cancelMobileNotification;
 export function scheduleItemNotifications(item) {
     if (!item) return;
 
+    // توليد IDs رقمية فريدة ونظيفة
     const numericId = getStableNumericId(item.id);
-    const dueNumericId = getStableNumericId(item.id + '_due');
+    // لضمان أن الـ Due ID رقمي تماماً ولا يحتوي على نصوص تسبب NaN
+    const dueNumericId = getStableNumericId(item.id) + 999999; 
 
-    if (cancelMobileNotification) {
-        for (let i = 0; i < 5; i++) {
-            cancelMobileNotification(numericId + i * 1000000);
-        }
-        cancelMobileNotification(dueNumericId);
+    // إلغاء الإشعارات القديمة لمنع التكرار
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+        window.Capacitor.Plugins.LocalNotifications.cancel({
+            notifications: [{ id: numericId }, { id: dueNumericId }]
+        });
     }
 
     if (item.isCancelled || item.isDeleted) return;
@@ -433,20 +470,14 @@ export function scheduleItemNotifications(item) {
         let triggerTime;
         if (isRepeating) {
             const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const day = String(now.getDate()).padStart(2, '0');
-            const todayStr = `${year}-${month}-${day}`;
+            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             
             const isCompletedToday = item.isCompleted || (item.completedDates && item.completedDates.includes(todayStr));
             let startFromDate = item.startDate;
             if (isCompletedToday) {
                 const tomorrow = new Date();
                 tomorrow.setDate(tomorrow.getDate() + 1);
-                const ty = tomorrow.getFullYear();
-                const tm = String(tomorrow.getMonth() + 1).padStart(2, '0');
-                const td = String(tomorrow.getDate()).padStart(2, '0');
-                startFromDate = `${ty}-${tm}-${td}`;
+                startFromDate = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
             }
             triggerTime = getNextOccurrenceTime(startFromDate, item.startTime, item.frequency, item.specificDays, item.customNum, item.customUnit);
         } else {
@@ -464,63 +495,30 @@ export function scheduleItemNotifications(item) {
                 notifBody = `Time for your habit: ${item.title}`;
             }
 
-            if (scheduleMobileNotification) {
-                if (isRepeating) {
-                    let occurrenceTime = new Date(triggerTime);
-                    for (let i = 0; i < 5; i++) {
-                        if (occurrenceTime > new Date()) {
-                            scheduleMobileNotification(
-                                numericId + i * 1000000,
-                                notifTitle,
-                                notifBody,
-                                occurrenceTime,
-                                null,
-                                'success.mp3'
-                            );
-                        }
-                        
-                        const nextY = occurrenceTime.getFullYear();
-                        const nextM = String(occurrenceTime.getMonth() + 1).padStart(2, '0');
-                        const nextD = String(occurrenceTime.getDate()).padStart(2, '0');
-                        const nextDateStr = `${nextY}-${nextM}-${nextD}`;
-
-                        occurrenceTime = getNextOccurrenceTime(
-                            nextDateStr,
-                            item.startTime,
-                            item.frequency,
-                            item.specificDays,
-                            item.customNum,
-                            item.customUnit
-                        );
-                        if (!occurrenceTime) break;
-                    }
-                } else {
-                    scheduleMobileNotification(
-                        numericId,
-                        notifTitle,
-                        notifBody,
-                        triggerTime,
-                        null,
-                        'success.mp3'
-                    );
-                }
-            }
+            // جدولة التكرار القادم فوراً (مرة واحدة فقط وبشكل صحيح)
+            scheduleMobileNotification(
+                numericId,
+                notifTitle,
+                notifBody,
+                triggerTime,
+                null,
+                'success.mp3'
+            );
         }
     }
 
+    // جدولة الـ Deadline (Due Date) لو موجود
     if (item.dueDate && item.dueTime) {
         const triggerTime = parseLocalISOString(item.dueDate, item.dueTime);
         if (triggerTime && triggerTime > new Date()) {
-            if (scheduleMobileNotification) {
-                scheduleMobileNotification(
-                    dueNumericId,
-                    'Task Overdue!',
-                    `The deadline for "${item.title}" has passed.`,
-                    triggerTime,
-                    null,
-                    'success.mp3'
-                );
-            }
+            scheduleMobileNotification(
+                dueNumericId,
+                'Task Overdue!',
+                `The deadline for "${item.title}" has passed.`,
+                triggerTime,
+                null,
+                'success.mp3'
+            );
         }
     }
 }

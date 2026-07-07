@@ -821,7 +821,22 @@ function initMissedNotificationsUI() {
 
 function scheduleMobileNotification(id, title, body, triggerTime, frequency, soundName) {
     const delayMs = new Date(triggerTime).getTime() - Date.now();
-    if (delayMs <= 0 && !frequency) return;
+    
+    if (delayMs <= 0 && !frequency) {
+        // إذا كان الميعاد قد فات منذ أقل من دقيقتين، نطلقه فوراً للمستخدم
+        if (delayMs >= -120000) {
+            console.log(`[MobileBridge] Notification missed recently (${Math.abs(delayMs)}ms ago). Triggering immediately.`);
+            return scheduleMobileNotification(id, title, body, new Date(Date.now() + 50), frequency, soundName);
+        } else {
+            // إذا كان قديماً، نضيفه لقائمة الإشعارات الفائتة مباشرة
+            console.log(`[MobileBridge] Notification missed. Adding to missed list.`);
+            const tDate = new Date(triggerTime);
+            const hours = String(tDate.getHours()).padStart(2, '0');
+            const mins = String(tDate.getMinutes()).padStart(2, '0');
+            addMissedNotification(`Overdue: ${title}`, `${hours}:${mins}`, 'overdue');
+            return;
+        }
+    }
 
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
         const scheduleOpts = { at: new Date(triggerTime), allowWhileIdle: true };
@@ -843,34 +858,54 @@ function scheduleMobileNotification(id, title, body, triggerTime, frequency, sou
         const soundBase = sound.replace('.mp3', '');
         const channelId = `flowtick-${soundBase}-channel-v6`;
 
-        window.Capacitor.Plugins.LocalNotifications.createChannel({
-            id: channelId,
-            name: `FlowTick ${soundBase.charAt(0).toUpperCase() + soundBase.slice(1)} Alerts`,
-            importance: 5,
-            sound: soundBase, // Android requires resource name without extension
-            visibility: 1
-        }).then(() => {
-            const notifId = Math.abs(parseInt(id));
-            if (!notifId) return;
-            window.Capacitor.Plugins.LocalNotifications.schedule({
-                notifications: [{
-                    id: notifId,
-                    title: title,
-                    body: body,
-                    schedule: scheduleOpts,
-                    sound: soundBase, // Android requires resource name without extension
-                    channelId: channelId,
-                    ongoing: false,
-                    autoCancel: true,
-                    foreground: true,
-                    actionTypeId: '',
-                    extra: null
-                }]
-            });
-        });
+        // تحويل أمن للـ ID لضمان أنه رقم صحيح دائماً ولا يعطي NaN
+        let notifId = parseInt(id, 10);
+        if (isNaN(notifId)) {
+            // لو الـ ID نصي، بنعمل له Hash رقمي سريع
+            notifId = Math.abs(String(id).split("").reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0));
+        } else {
+            notifId = Math.abs(notifId);
+        }
+
+        // جدول الإشعار مباشرة، الـ Channels متكريتة فوق أول ما الملف بيفتح
+        window.Capacitor.Plugins.LocalNotifications.schedule({
+            notifications: [{
+                id: notifId,
+                title: title,
+                body: body,
+                schedule: scheduleOpts,
+                sound: soundBase,
+                channelId: channelId,
+                ongoing: false,
+                autoCancel: true,
+                foreground: true,
+                actionTypeId: '',
+                extra: null
+            }]
+        }).catch(err => console.error("Schedule error:", err));
+        
         return;
     }
+
+    // الـ Fallback الخاص بالمتصفح (اللاب توب)
     console.log(`[MobileBridge] Web fallback. Delay: ${delayMs}ms`);
+    
+    // طلب إذن الإشعارات من المتصفح لو مش مسموح بيه
+    if (window.Notification && Notification.permission === "default") {
+        Notification.requestPermission();
+    }
+
+    // جدولة الإشعار على المتصفح باستخدام setTimeout
+    if (delayMs > 0) {
+        setTimeout(() => {
+            if (window.Notification && Notification.permission === "granted") {
+                new Notification(title, { body: body });
+            } else {
+                // لو المتصفح حاقب الإشعارات، اظهرها كـ alert عادي للتيست
+                alert(`[Notification] ${title}: ${body}`);
+            }
+        }, delayMs);
+    }
 }
 
 function updateMobileTimerNotification(isWork, timeLeft) {
@@ -926,14 +961,16 @@ window.cancelMobileNotification = cancelMobileNotification;
 function scheduleItemNotifications(item) {
     if (!item) return;
 
+    // توليد IDs رقمية فريدة ونظيفة
     const numericId = getStableNumericId(item.id);
-    const dueNumericId = getStableNumericId(item.id + '_due');
+    // لضمان أن الـ Due ID رقمي تماماً ولا يحتوي على نصوص تسبب NaN
+    const dueNumericId = getStableNumericId(item.id) + 999999; 
 
-    if (cancelMobileNotification) {
-        for (let i = 0; i < 5; i++) {
-            cancelMobileNotification(numericId + i * 1000000);
-        }
-        cancelMobileNotification(dueNumericId);
+    // إلغاء الإشعارات القديمة لمنع التكرار
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+        window.Capacitor.Plugins.LocalNotifications.cancel({
+            notifications: [{ id: numericId }, { id: dueNumericId }]
+        });
     }
 
     if (item.isCancelled || item.isDeleted) return;
@@ -945,20 +982,14 @@ function scheduleItemNotifications(item) {
         let triggerTime;
         if (isRepeating) {
             const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const day = String(now.getDate()).padStart(2, '0');
-            const todayStr = `${year}-${month}-${day}`;
+            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             
             const isCompletedToday = item.isCompleted || (item.completedDates && item.completedDates.includes(todayStr));
             let startFromDate = item.startDate;
             if (isCompletedToday) {
                 const tomorrow = new Date();
                 tomorrow.setDate(tomorrow.getDate() + 1);
-                const ty = tomorrow.getFullYear();
-                const tm = String(tomorrow.getMonth() + 1).padStart(2, '0');
-                const td = String(tomorrow.getDate()).padStart(2, '0');
-                startFromDate = `${ty}-${tm}-${td}`;
+                startFromDate = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
             }
             triggerTime = getNextOccurrenceTime(startFromDate, item.startTime, item.frequency, item.specificDays, item.customNum, item.customUnit);
         } else {
@@ -976,63 +1007,30 @@ function scheduleItemNotifications(item) {
                 notifBody = `Time for your habit: ${item.title}`;
             }
 
-            if (scheduleMobileNotification) {
-                if (isRepeating) {
-                    let occurrenceTime = new Date(triggerTime);
-                    for (let i = 0; i < 5; i++) {
-                        if (occurrenceTime > new Date()) {
-                            scheduleMobileNotification(
-                                numericId + i * 1000000,
-                                notifTitle,
-                                notifBody,
-                                occurrenceTime,
-                                null,
-                                'success.mp3'
-                            );
-                        }
-                        
-                        const nextY = occurrenceTime.getFullYear();
-                        const nextM = String(occurrenceTime.getMonth() + 1).padStart(2, '0');
-                        const nextD = String(occurrenceTime.getDate()).padStart(2, '0');
-                        const nextDateStr = `${nextY}-${nextM}-${nextD}`;
-
-                        occurrenceTime = getNextOccurrenceTime(
-                            nextDateStr,
-                            item.startTime,
-                            item.frequency,
-                            item.specificDays,
-                            item.customNum,
-                            item.customUnit
-                        );
-                        if (!occurrenceTime) break;
-                    }
-                } else {
-                    scheduleMobileNotification(
-                        numericId,
-                        notifTitle,
-                        notifBody,
-                        triggerTime,
-                        null,
-                        'success.mp3'
-                    );
-                }
-            }
+            // جدولة التكرار القادم فوراً (مرة واحدة فقط وبشكل صحيح)
+            scheduleMobileNotification(
+                numericId,
+                notifTitle,
+                notifBody,
+                triggerTime,
+                null,
+                'success.mp3'
+            );
         }
     }
 
+    // جدولة الـ Deadline (Due Date) لو موجود
     if (item.dueDate && item.dueTime) {
         const triggerTime = parseLocalISOString(item.dueDate, item.dueTime);
         if (triggerTime && triggerTime > new Date()) {
-            if (scheduleMobileNotification) {
-                scheduleMobileNotification(
-                    dueNumericId,
-                    'Task Overdue!',
-                    `The deadline for "${item.title}" has passed.`,
-                    triggerTime,
-                    null,
-                    'success.mp3'
-                );
-            }
+            scheduleMobileNotification(
+                dueNumericId,
+                'Task Overdue!',
+                `The deadline for "${item.title}" has passed.`,
+                triggerTime,
+                null,
+                'success.mp3'
+            );
         }
     }
 }
@@ -4188,7 +4186,7 @@ window.addEventListener('flowtick-data-changed', () => {
 
 /* ===== js/app.js ===== */
 // Immediate synchronous routing check to eliminate auth screen page flash
-(function() {
+(function () {
     const currentUser = localStorage.getItem('currentUser');
     const isGuestMode = localStorage.getItem('isGuestMode') === 'true';
     const authScreen = document.getElementById('auth-screen');
@@ -4330,7 +4328,7 @@ async function requestBatteryOptimization() {
         const prompted = localStorage.getItem('battery_prompted');
         if (!prompted) {
             localStorage.setItem('battery_prompted', 'true');
-            const pkg = 'com.flowtick.app'; 
+            const pkg = 'com.flowtick.app';
             window.location.href = `intent://#Intent;action=android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS;package=${pkg};end`;
         }
     }
@@ -4338,10 +4336,10 @@ async function requestBatteryOptimization() {
 
 function checkIfDashboardNeedsUpdate() {
     if (!window.activeTasksList || window.activeTasksList.length === 0) return false;
-    
+
     const now = new Date();
     let fingerprint = "";
-    
+
     window.activeTasksList.forEach(item => {
         let startInstant = item.startDate ? parseLocalISOString(item.startDate, item.startTime || '00:00') : new Date();
         let dueInstant = item.dueDate ? parseLocalISOString(item.dueDate, item.dueTime || '23:59') : null;
@@ -4352,10 +4350,10 @@ function checkIfDashboardNeedsUpdate() {
         } else if (startInstant > now) {
             cat = "upcoming";
         }
-        
+
         fingerprint += `${item.id}:${cat}|`;
     });
-    
+
     if (window.lastDashboardFingerprint !== fingerprint) {
         window.lastDashboardFingerprint = fingerprint;
         return true;
@@ -4367,15 +4365,23 @@ function initDatabase() {
     displayTasks();
     initCalendar();
 
+    let retries = 0;
+    const maxRetries = 100; // 10 seconds timeout
     // Poll until the Firebase globals are injected by the <script type="module"> in index.html.
     // `db` is declared as a global var in bundle.js and populated by that inline module.
     const checkFb = setInterval(() => {
-        if (db) {
+        if (typeof db !== 'undefined' && db) {
             clearInterval(checkFb);
             displayTasks();
             syncOfflineQueue();
             if (window.calendarInstance) {
                 window.calendarInstance.refetchEvents();
+            }
+        } else {
+            retries++;
+            if (retries >= maxRetries) {
+                clearInterval(checkFb);
+                console.warn('[FlowTick] Firebase failed to load within timeout. Running in local/offline mode.');
             }
         }
     }, 100);
@@ -4395,7 +4401,7 @@ document.addEventListener('click', (e) => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-    initAuth(); 
+    initAuth();
     applyThemePreference(localStorage.getItem('theme') || 'system');
     initSidebar();
     initRouter();
@@ -4464,7 +4470,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 custom: 'Custom Range'
             };
             window.customTaskFilterSelect.setValue(window.currentTaskFilter, labelMap[window.currentTaskFilter] || 'All Tasks');
-            
+
             if (window.currentTaskFilter === 'custom' && window.customFilterStartDate && window.customFilterEndDate) {
                 const displayEl = document.getElementById('task-filter-display');
                 if (displayEl) {
@@ -4519,10 +4525,10 @@ document.addEventListener('DOMContentLoaded', () => {
             window.customFilterStartDate = startVal;
             window.customFilterEndDate = endVal;
             window.currentTaskFilter = 'custom';
-            
+
             customFilterModal.classList.remove('active');
             syncFilterUI();
-            
+
             if (typeof window.sortAndRenderDashboard === 'function') {
                 window.sortAndRenderDashboard();
             }
@@ -4568,30 +4574,30 @@ document.addEventListener('DOMContentLoaded', () => {
     // Date/deadline range checker
     const startDateInput = document.getElementById('task-start-date');
     const dueDateInput = document.getElementById('task-due-date');
-    
+
     function validateDates() {
         if (!startDateInput || !dueDateInput) return;
         const startDateVal = startDateInput.value;
         const dueDateVal = dueDateInput.value;
-        
+
         const existingError = dueDateInput.parentElement.querySelector('.live-date-error');
         if (existingError) {
             existingError.remove();
         }
         dueDateInput.style.border = '';
         dueDateInput.style.boxShadow = '';
-        
+
         if (startDateVal && dueDateVal) {
             const startTimeVal = window.timePickerStart ? window.timePickerStart.getValue() : '';
             const dueTimeVal = window.timePickerDue ? window.timePickerDue.getValue() : '';
-            
+
             const startDateTime = new Date(`${startDateVal}T${startTimeVal || '00:00'}`);
             const dueDateTime = new Date(`${dueDateVal}T${dueTimeVal || '23:59'}`);
-            
+
             if (dueDateTime < startDateTime) {
                 dueDateInput.style.border = '2px solid #FF4D4F';
                 dueDateInput.style.boxShadow = '0 0 8px rgba(255, 77, 79, 0.2)';
-                
+
                 const errMsg = document.createElement('div');
                 errMsg.className = 'live-date-error';
                 errMsg.style.color = '#FF4D4F';
@@ -4603,7 +4609,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 errMsg.style.gap = '4px';
                 errMsg.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> Deadline can\'t be before start time';
                 dueDateInput.parentElement.appendChild(errMsg);
-                
+
                 dueDateInput.style.backgroundColor = 'rgba(255, 77, 79, 0.08)';
                 setTimeout(() => {
                     dueDateInput.style.backgroundColor = '';
@@ -4616,7 +4622,7 @@ document.addEventListener('DOMContentLoaded', () => {
         validateDates();
     });
     window.timePickerEnd = initCustomTimePicker('time-picker-end', true);
-    
+
     window.timePickerDue = initCustomTimePicker('time-picker-due', true, () => {
         if (dueDateInput && !dueDateInput.value && window.timePickerDue.getValue()) {
             const d = new Date();
@@ -4638,7 +4644,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const listBtn = document.getElementById('view-list-btn');
     const kanbanBtn = document.getElementById('view-kanban-btn');
-    
+
     function setDashboardLayout(layout) {
         localStorage.setItem('dashboardLayout', layout);
         if (listBtn && kanbanBtn) {

@@ -1,12 +1,12 @@
 import { initAuth } from './auth.js';
 import { initMissedNotificationsUI } from './notifications.js';
-import { 
-    initCustomSelect, 
-    initCustomTimePicker, 
-    displayTasks, 
-    initModalLogic, 
+import {
+    initCustomSelect,
+    initCustomTimePicker,
+    displayTasks,
+    initModalLogic,
     initSettings,
-    clearLiveDateErrors 
+    clearLiveDateErrors
 } from './ui.js';
 import { initPomodoroDrag } from './timer.js';
 import { initCalendar } from './calendar.js';
@@ -14,7 +14,7 @@ import { syncOfflineQueue } from './db.js';
 import { parseLocalISOString, applyThemePreference } from './utils.js';
 
 // Immediate synchronous routing check to eliminate auth screen page flash
-(function() {
+(function () {
     const currentUser = localStorage.getItem('currentUser');
     const isGuestMode = localStorage.getItem('isGuestMode') === 'true';
     const authScreen = document.getElementById('auth-screen');
@@ -156,7 +156,7 @@ async function requestBatteryOptimization() {
         const prompted = localStorage.getItem('battery_prompted');
         if (!prompted) {
             localStorage.setItem('battery_prompted', 'true');
-            const pkg = 'com.flowtick.app'; 
+            const pkg = 'com.flowtick.app';
             window.location.href = `intent://#Intent;action=android.settings.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS;package=${pkg};end`;
         }
     }
@@ -164,10 +164,10 @@ async function requestBatteryOptimization() {
 
 function checkIfDashboardNeedsUpdate() {
     if (!window.activeTasksList || window.activeTasksList.length === 0) return false;
-    
+
     const now = new Date();
     let fingerprint = "";
-    
+
     window.activeTasksList.forEach(item => {
         let startInstant = item.startDate ? parseLocalISOString(item.startDate, item.startTime || '00:00') : new Date();
         let dueInstant = item.dueDate ? parseLocalISOString(item.dueDate, item.dueTime || '23:59') : null;
@@ -178,10 +178,10 @@ function checkIfDashboardNeedsUpdate() {
         } else if (startInstant > now) {
             cat = "upcoming";
         }
-        
+
         fingerprint += `${item.id}:${cat}|`;
     });
-    
+
     if (window.lastDashboardFingerprint !== fingerprint) {
         window.lastDashboardFingerprint = fingerprint;
         return true;
@@ -193,15 +193,23 @@ function initDatabase() {
     displayTasks();
     initCalendar();
 
+    let retries = 0;
+    const maxRetries = 100; // 10 seconds timeout
     // Poll until the Firebase globals are injected by the <script type="module"> in index.html.
     // `db` is declared as a global var in bundle.js and populated by that inline module.
     const checkFb = setInterval(() => {
-        if (db) {
+        if (typeof db !== 'undefined' && db) {
             clearInterval(checkFb);
             displayTasks();
             syncOfflineQueue();
             if (window.calendarInstance) {
                 window.calendarInstance.refetchEvents();
+            }
+        } else {
+            retries++;
+            if (retries >= maxRetries) {
+                clearInterval(checkFb);
+                console.warn('[FlowTick] Firebase failed to load within timeout. Running in local/offline mode.');
             }
         }
     }, 100);
@@ -221,7 +229,7 @@ document.addEventListener('click', (e) => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-    initAuth(); 
+    initAuth();
     applyThemePreference(localStorage.getItem('theme') || 'system');
     initSidebar();
     initRouter();
@@ -290,7 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 custom: 'Custom Range'
             };
             window.customTaskFilterSelect.setValue(window.currentTaskFilter, labelMap[window.currentTaskFilter] || 'All Tasks');
-            
+
             if (window.currentTaskFilter === 'custom' && window.customFilterStartDate && window.customFilterEndDate) {
                 const displayEl = document.getElementById('task-filter-display');
                 if (displayEl) {
@@ -345,10 +353,10 @@ document.addEventListener('DOMContentLoaded', () => {
             window.customFilterStartDate = startVal;
             window.customFilterEndDate = endVal;
             window.currentTaskFilter = 'custom';
-            
+
             customFilterModal.classList.remove('active');
             syncFilterUI();
-            
+
             if (typeof window.sortAndRenderDashboard === 'function') {
                 window.sortAndRenderDashboard();
             }
@@ -394,30 +402,30 @@ document.addEventListener('DOMContentLoaded', () => {
     // Date/deadline range checker
     const startDateInput = document.getElementById('task-start-date');
     const dueDateInput = document.getElementById('task-due-date');
-    
+
     function validateDates() {
         if (!startDateInput || !dueDateInput) return;
         const startDateVal = startDateInput.value;
         const dueDateVal = dueDateInput.value;
-        
+
         const existingError = dueDateInput.parentElement.querySelector('.live-date-error');
         if (existingError) {
             existingError.remove();
         }
         dueDateInput.style.border = '';
         dueDateInput.style.boxShadow = '';
-        
+
         if (startDateVal && dueDateVal) {
             const startTimeVal = window.timePickerStart ? window.timePickerStart.getValue() : '';
             const dueTimeVal = window.timePickerDue ? window.timePickerDue.getValue() : '';
-            
+
             const startDateTime = new Date(`${startDateVal}T${startTimeVal || '00:00'}`);
             const dueDateTime = new Date(`${dueDateVal}T${dueTimeVal || '23:59'}`);
-            
+
             if (dueDateTime < startDateTime) {
                 dueDateInput.style.border = '2px solid #FF4D4F';
                 dueDateInput.style.boxShadow = '0 0 8px rgba(255, 77, 79, 0.2)';
-                
+
                 const errMsg = document.createElement('div');
                 errMsg.className = 'live-date-error';
                 errMsg.style.color = '#FF4D4F';
@@ -429,7 +437,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 errMsg.style.gap = '4px';
                 errMsg.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> Deadline can\'t be before start time';
                 dueDateInput.parentElement.appendChild(errMsg);
-                
+
                 dueDateInput.style.backgroundColor = 'rgba(255, 77, 79, 0.08)';
                 setTimeout(() => {
                     dueDateInput.style.backgroundColor = '';
@@ -442,7 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
         validateDates();
     });
     window.timePickerEnd = initCustomTimePicker('time-picker-end', true);
-    
+
     window.timePickerDue = initCustomTimePicker('time-picker-due', true, () => {
         if (dueDateInput && !dueDateInput.value && window.timePickerDue.getValue()) {
             const d = new Date();
@@ -464,7 +472,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const listBtn = document.getElementById('view-list-btn');
     const kanbanBtn = document.getElementById('view-kanban-btn');
-    
+
     function setDashboardLayout(layout) {
         localStorage.setItem('dashboardLayout', layout);
         if (listBtn && kanbanBtn) {

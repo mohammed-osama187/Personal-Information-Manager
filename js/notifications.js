@@ -3,12 +3,13 @@ import {
     formatTaskTimeDisplay, 
     playSound, 
     showToast, 
-    parseLocalISOString 
+    parseLocalISOString,
+    getTodayStr
 } from './utils.js';
 import { getTasksFromFirebase, saveTaskToFirebase } from './db.js';
 import { displayTasks } from './ui.js';
 
-// Register native notification channels on Android 8+ (API 26+)
+// Register native notification channels and action types on Android 8+ (API 26+)
 export async function registerNotificationChannels() {
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
         const _ln = window.Capacitor.Plugins.LocalNotifications;
@@ -44,7 +45,52 @@ export async function registerNotificationChannels() {
                 vibration: false,
                 lights: false
             });
-            console.log('[FlowTick Notifications] Native channels registered');
+
+            // Register native interactive notification action groups
+            await _ln.registerActionTypes({
+                types: [
+                    {
+                        id: 'TASK_ACTIONS',
+                        actions: [
+                            {
+                                id: 'mark_done',
+                                title: 'Mark Done'
+                            },
+                            {
+                                id: 'wont_do',
+                                title: "Won't Do"
+                            }
+                        ]
+                    },
+                    {
+                        id: 'TIMER_RUNNING_ACTIONS',
+                        actions: [
+                            {
+                                id: 'timer_pause',
+                                title: 'Pause'
+                            },
+                            {
+                                id: 'timer_stop',
+                                title: 'End'
+                            }
+                        ]
+                    },
+                    {
+                        id: 'TIMER_PAUSED_ACTIONS',
+                        actions: [
+                            {
+                                id: 'timer_resume',
+                                title: 'Resume'
+                            },
+                            {
+                                id: 'timer_stop',
+                                title: 'End'
+                            }
+                        ]
+                    }
+                ]
+            });
+            console.log('[FlowTick Notifications] Native channels and action types registered');
         } catch (err) {
             console.warn('[FlowTick Notifications] Channel creation warning:', err);
         }
@@ -91,12 +137,139 @@ export async function requestNotificationPermissions() {
 window.registerNotificationChannels = registerNotificationChannels;
 window.requestNotificationPermissions = requestNotificationPermissions;
 
-// Pre-register channels immediately and when DOM is loaded
+export async function handleCompleteTaskAction(itemId, itemType, notifTitle) {
+    try {
+        const tasks = await getTasksFromFirebase();
+        const item = tasks.find(t => String(t.id) === String(itemId));
+        if (item) {
+            if (typeof window.toggleItemComplete === 'function') {
+                window.toggleItemComplete(itemId, false);
+            } else {
+                item.isCompleted = true;
+                item.completedAt = new Date().toISOString();
+                await saveTaskToFirebase(item);
+                displayTasks();
+            }
+            showToast(`"${item.title}" marked as complete!`, 'success');
+        } else {
+            const cleanTitle = (notifTitle || '').replace('Reminder: ', '').replace('Task Overdue: ', '').replace("It's time for: ", '');
+            const taskByTitle = tasks.find(t => t.title === cleanTitle && !t.isCompleted && !t.isCancelled);
+            if (taskByTitle) {
+                if (typeof window.toggleItemComplete === 'function') {
+                    window.toggleItemComplete(taskByTitle.id, false);
+                } else {
+                    taskByTitle.isCompleted = true;
+                    taskByTitle.completedAt = new Date().toISOString();
+                    await saveTaskToFirebase(taskByTitle);
+                    displayTasks();
+                }
+                showToast(`"${taskByTitle.title}" marked as complete!`, 'success');
+            }
+        }
+    } catch (e) {
+        console.error('[FlowTick Notifications] Error handling complete action:', e);
+    }
+}
+
+export async function handleCancelTaskAction(itemId, itemType, notifTitle) {
+    try {
+        const tasks = await getTasksFromFirebase();
+        const item = tasks.find(t => String(t.id) === String(itemId));
+        if (item) {
+            if (item.type === 'habit') {
+                if (typeof window.skipHabitInDetails === 'function') {
+                    window.skipHabitInDetails(itemId);
+                } else {
+                    const todayStr = getTodayStr();
+                    if (!item.skippedDates) item.skippedDates = [];
+                    if (!item.skippedDates.includes(todayStr)) item.skippedDates.push(todayStr);
+                    await saveTaskToFirebase(item);
+                    displayTasks();
+                }
+                showToast(`"${item.title}" skipped for today`, 'info');
+            } else {
+                if (typeof window.cancelItem === 'function') {
+                    window.cancelItem(itemId);
+                } else {
+                    item.isCancelled = true;
+                    item.isCompleted = false;
+                    await saveTaskToFirebase(item);
+                    displayTasks();
+                }
+                showToast(`"${item.title}" marked as Won't Do`, 'info');
+            }
+        }
+    } catch (e) {
+        console.error('[FlowTick Notifications] Error handling cancel action:', e);
+    }
+}
+
+export function initNotificationActionListeners() {
+    if (!window.Capacitor || !window.Capacitor.Plugins || !window.Capacitor.Plugins.LocalNotifications) {
+        return;
+    }
+
+    if (window._notifActionListenerInitialized) return;
+    window._notifActionListenerInitialized = true;
+
+    window.Capacitor.Plugins.LocalNotifications.addListener('localNotificationActionPerformed', async (action) => {
+        console.log('[FlowTick Notifications] Action performed:', action);
+        const actionId = action.actionId;
+        const notification = action.notification || {};
+        const extra = notification.extra || {};
+        const itemId = extra.itemId;
+        const itemType = extra.itemType || 'task';
+
+        // Timer actions
+        if (notification.id === 888888) {
+            if (actionId === 'timer_pause') {
+                if (typeof window.pausePomodoro === 'function') {
+                    window.pausePomodoro();
+                }
+            } else if (actionId === 'timer_resume') {
+                if (typeof window.resumePomodoro === 'function') {
+                    window.resumePomodoro();
+                }
+            } else if (actionId === 'timer_stop') {
+                if (typeof window.resetPomodoro === 'function') {
+                    window.resetPomodoro();
+                }
+            } else if (actionId === 'tap') {
+                if (typeof window.navigateToPage === 'function') {
+                    window.navigateToPage('pomodoro-page', true);
+                }
+            }
+            return;
+        }
+
+        // Task & Habit actions
+        if (actionId === 'mark_done' && itemId) {
+            handleCompleteTaskAction(itemId, itemType, notification.title);
+        } else if (actionId === 'wont_do' && itemId) {
+            handleCancelTaskAction(itemId, itemType, notification.title);
+        } else if (actionId === 'tap') {
+            if (itemId && typeof window.showItemDetails === 'function') {
+                window.showItemDetails(itemId);
+            }
+        }
+    });
+}
+
+window.handleCompleteTaskAction = handleCompleteTaskAction;
+window.handleCancelTaskAction = handleCancelTaskAction;
+window.initNotificationActionListeners = initNotificationActionListeners;
+
+// Pre-register channels and action listeners immediately and on load
 registerNotificationChannels();
+initNotificationActionListeners();
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', registerNotificationChannels);
+    document.addEventListener('DOMContentLoaded', () => {
+        registerNotificationChannels();
+        initNotificationActionListeners();
+    });
 } else {
     registerNotificationChannels();
+    initNotificationActionListeners();
 }
 
 export function getNextOccurrenceTime(startDateStr, startTimeStr, frequency, specificDays, customNum, customUnit, relativeToNow = true) {
@@ -349,7 +522,7 @@ export function initMissedNotificationsUI() {
     renderMissedNotifications();
 }
 
-export function scheduleMobileNotification(id, title, body, triggerTime, frequency, soundName) {
+export function scheduleMobileNotification(id, title, body, triggerTime, frequency, soundName, extraData = null, actionTypeId = null) {
     const triggerTimestamp = triggerTime instanceof Date ? triggerTime.getTime() : new Date(triggerTime).getTime();
     const now = Date.now();
     const delayMs = triggerTimestamp - now;
@@ -390,6 +563,16 @@ export function scheduleMobileNotification(id, title, body, triggerTime, frequen
             ongoing: false,
             autoCancel: true
         };
+
+        if (actionTypeId) {
+            notifItem.actionTypeId = actionTypeId;
+        } else if (extraData && extraData.itemId) {
+            notifItem.actionTypeId = 'TASK_ACTIONS';
+        }
+
+        if (extraData) {
+            notifItem.extra = extraData;
+        }
 
         if (!isImmediate) {
             const scheduleOpts = {
@@ -455,21 +638,39 @@ export function scheduleMobileNotification(id, title, body, triggerTime, frequen
     }
 }
 
-export function updateMobileTimerNotification(isWork, timeLeft) {
+export function updateMobileTimerNotification(isWork, timeLeft, isRunning = true, expectedEnd = null) {
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+        registerNotificationChannels();
         const mins = Math.floor(timeLeft / 60);
         const secs = timeLeft % 60;
         const timeStr = `${mins}:${String(secs).padStart(2, '0')} remaining`;
 
+        const actionTypeId = isRunning ? 'TIMER_RUNNING_ACTIONS' : 'TIMER_PAUSED_ACTIONS';
+        const title = isWork 
+            ? (isRunning ? '🍅 Focus Session Active' : '⏸️ Focus Session Paused')
+            : (isRunning ? '☕ Break Session Active' : '⏸️ Break Session Paused');
+
+        const notif = {
+            id: 888888,
+            title: title,
+            body: timeStr,
+            channelId: 'flowtick-timer-live-v6',
+            ongoing: true, // Pinned in notification drawer
+            autoCancel: false,
+            actionTypeId: actionTypeId,
+            extra: {
+                isWorkSession: isWork,
+                timeLeft: timeLeft,
+                isRunning: isRunning
+            }
+        };
+
+        if (isRunning && expectedEnd) {
+            notif.extra.chronometer = expectedEnd;
+        }
+
         window.Capacitor.Plugins.LocalNotifications.schedule({
-            notifications: [{
-                id: 888888,
-                title: isWork ? '🍅 Focus Session Active' : '☕ Break Session Active',
-                body: timeStr,
-                channelId: 'flowtick-timer-live-v6',
-                ongoing: true,
-                autoCancel: false
-            }]
+            notifications: [notif]
         }).catch(err => {
             console.warn('[LiveTimer] Update notification error:', err);
         });
@@ -555,7 +756,9 @@ export function scheduleItemNotifications(item) {
                 notifBody,
                 triggerTime,
                 null,
-                'success.mp3'
+                'success.mp3',
+                { itemId: item.id, itemType: item.type || 'task' },
+                'TASK_ACTIONS'
             );
         }
     }
@@ -570,7 +773,9 @@ export function scheduleItemNotifications(item) {
                 `The deadline for "${item.title}" has passed.`,
                 triggerTime,
                 null,
-                'success.mp3'
+                'success.mp3',
+                { itemId: item.id, itemType: item.type || 'task' },
+                'TASK_ACTIONS'
             );
         }
     }

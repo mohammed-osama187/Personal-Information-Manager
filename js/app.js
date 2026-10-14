@@ -11,7 +11,7 @@ import {
 import { initPomodoroDrag } from './timer.js';
 import { initCalendar } from './calendar.js';
 import { syncOfflineQueue } from './db.js';
-import { parseLocalISOString, applyThemePreference } from './utils.js';
+import { parseLocalISOString, applyThemePreference, showToast } from './utils.js';
 
 // Immediate synchronous routing check to eliminate auth screen page flash
 (function () {
@@ -118,36 +118,84 @@ function initRouter() {
     });
 }
 
-function initBackButtonHandler() {
-    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
-        window.Capacitor.Plugins.App.addListener('backButton', () => {
-            // 1. Close sidebar overlay if active
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebar-overlay');
-            if (sidebar && sidebar.classList.contains('active')) {
-                sidebar.classList.remove('active');
-                overlay.classList.remove('active');
-                return;
-            }
+let lastBackPressTime = 0;
 
-            // 2. Close active modals
-            const activeModals = document.querySelectorAll('.modal.active');
-            if (activeModals.length > 0) {
-                activeModals.forEach(modal => modal.classList.remove('active'));
-                return;
-            }
+function handleAppBackButton() {
+    // 1. Close open dropdowns or popups
+    const openDropdowns = document.querySelectorAll('.custom-select-options.show, .custom-select-wrapper.open, .task-dropdown.show, .time-picker-popup.open, #notification-dropdown.active');
+    if (openDropdowns.length > 0) {
+        openDropdowns.forEach(el => el.classList.remove('show', 'open', 'active'));
+        return;
+    }
 
-            // 3. Go back in history
-            if (window.navHistory && window.navHistory.length > 1) {
-                window.navHistory.pop(); // Pop current page
-                const prevPage = window.navHistory[window.navHistory.length - 1];
-                navigateToPage(prevPage, false);
-                return;
-            }
+    // 2. Close sidebar overlay if active
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (sidebar && sidebar.classList.contains('active')) {
+        sidebar.classList.remove('active');
+        if (overlay) overlay.classList.remove('active');
+        return;
+    }
 
-            // 4. Default native exit
+    // 3. Close active modals
+    const activeModals = document.querySelectorAll('.modal.active');
+    if (activeModals.length > 0) {
+        activeModals.forEach(modal => modal.classList.remove('active'));
+        return;
+    }
+
+    // 4. Go back in navigation history
+    if (window.navHistory && window.navHistory.length > 1) {
+        window.navHistory.pop(); // Pop current page
+        const prevPage = window.navHistory[window.navHistory.length - 1];
+        navigateToPage(prevPage, false);
+        return;
+    }
+
+    // If on a page other than tasks-page, navigate back to tasks-page
+    const activeSection = document.querySelector('.page-section.active');
+    if (activeSection && activeSection.id !== 'tasks-page') {
+        window.navHistory = ['tasks-page'];
+        navigateToPage('tasks-page', false);
+        return;
+    }
+
+    // 5. On the root page: require double back press within 2s to exit
+    const now = Date.now();
+    if (now - lastBackPressTime < 2000) {
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
             window.Capacitor.Plugins.App.exitApp();
-        });
+        }
+    } else {
+        lastBackPressTime = now;
+        showToast('Press back again to exit', 'info', false);
+    }
+}
+
+function initBackButtonHandler() {
+    let attached = false;
+    const attach = () => {
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+            if (!attached) {
+                attached = true;
+                window.Capacitor.Plugins.App.addListener('backButton', () => {
+                    handleAppBackButton();
+                });
+                console.log('[FlowTick] App backButton listener registered');
+            }
+            return true;
+        }
+        return false;
+    };
+
+    if (!attach()) {
+        let attempts = 0;
+        const interval = setInterval(() => {
+            attempts++;
+            if (attach() || attempts > 20) {
+                clearInterval(interval);
+            }
+        }, 150);
     }
 }
 

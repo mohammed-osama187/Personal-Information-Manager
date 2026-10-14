@@ -520,7 +520,7 @@ async function syncGuestDataToFirebase(userId) {
 
 
 /* ===== js/notifications.js ===== */
-// Register native notification channels on Android 8+ (API 26+)
+// Register native notification channels and action types on Android 8+ (API 26+)
 async function registerNotificationChannels() {
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
         const _ln = window.Capacitor.Plugins.LocalNotifications;
@@ -556,7 +556,52 @@ async function registerNotificationChannels() {
                 vibration: false,
                 lights: false
             });
-            console.log('[FlowTick Notifications] Native channels registered');
+
+            // Register native interactive notification action groups
+            await _ln.registerActionTypes({
+                types: [
+                    {
+                        id: 'TASK_ACTIONS',
+                        actions: [
+                            {
+                                id: 'mark_done',
+                                title: 'Mark Done'
+                            },
+                            {
+                                id: 'wont_do',
+                                title: "Won't Do"
+                            }
+                        ]
+                    },
+                    {
+                        id: 'TIMER_RUNNING_ACTIONS',
+                        actions: [
+                            {
+                                id: 'timer_pause',
+                                title: 'Pause'
+                            },
+                            {
+                                id: 'timer_stop',
+                                title: 'End'
+                            }
+                        ]
+                    },
+                    {
+                        id: 'TIMER_PAUSED_ACTIONS',
+                        actions: [
+                            {
+                                id: 'timer_resume',
+                                title: 'Resume'
+                            },
+                            {
+                                id: 'timer_stop',
+                                title: 'End'
+                            }
+                        ]
+                    }
+                ]
+            });
+            console.log('[FlowTick Notifications] Native channels and action types registered');
         } catch (err) {
             console.warn('[FlowTick Notifications] Channel creation warning:', err);
         }
@@ -603,12 +648,139 @@ async function requestNotificationPermissions() {
 window.registerNotificationChannels = registerNotificationChannels;
 window.requestNotificationPermissions = requestNotificationPermissions;
 
-// Pre-register channels immediately and when DOM is loaded
+async function handleCompleteTaskAction(itemId, itemType, notifTitle) {
+    try {
+        const tasks = await getTasksFromFirebase();
+        const item = tasks.find(t => String(t.id) === String(itemId));
+        if (item) {
+            if (typeof window.toggleItemComplete === 'function') {
+                window.toggleItemComplete(itemId, false);
+            } else {
+                item.isCompleted = true;
+                item.completedAt = new Date().toISOString();
+                await saveTaskToFirebase(item);
+                displayTasks();
+            }
+            showToast(`"${item.title}" marked as complete!`, 'success');
+        } else {
+            const cleanTitle = (notifTitle || '').replace('Reminder: ', '').replace('Task Overdue: ', '').replace("It's time for: ", '');
+            const taskByTitle = tasks.find(t => t.title === cleanTitle && !t.isCompleted && !t.isCancelled);
+            if (taskByTitle) {
+                if (typeof window.toggleItemComplete === 'function') {
+                    window.toggleItemComplete(taskByTitle.id, false);
+                } else {
+                    taskByTitle.isCompleted = true;
+                    taskByTitle.completedAt = new Date().toISOString();
+                    await saveTaskToFirebase(taskByTitle);
+                    displayTasks();
+                }
+                showToast(`"${taskByTitle.title}" marked as complete!`, 'success');
+            }
+        }
+    } catch (e) {
+        console.error('[FlowTick Notifications] Error handling complete action:', e);
+    }
+}
+
+async function handleCancelTaskAction(itemId, itemType, notifTitle) {
+    try {
+        const tasks = await getTasksFromFirebase();
+        const item = tasks.find(t => String(t.id) === String(itemId));
+        if (item) {
+            if (item.type === 'habit') {
+                if (typeof window.skipHabitInDetails === 'function') {
+                    window.skipHabitInDetails(itemId);
+                } else {
+                    const todayStr = getTodayStr();
+                    if (!item.skippedDates) item.skippedDates = [];
+                    if (!item.skippedDates.includes(todayStr)) item.skippedDates.push(todayStr);
+                    await saveTaskToFirebase(item);
+                    displayTasks();
+                }
+                showToast(`"${item.title}" skipped for today`, 'info');
+            } else {
+                if (typeof window.cancelItem === 'function') {
+                    window.cancelItem(itemId);
+                } else {
+                    item.isCancelled = true;
+                    item.isCompleted = false;
+                    await saveTaskToFirebase(item);
+                    displayTasks();
+                }
+                showToast(`"${item.title}" marked as Won't Do`, 'info');
+            }
+        }
+    } catch (e) {
+        console.error('[FlowTick Notifications] Error handling cancel action:', e);
+    }
+}
+
+function initNotificationActionListeners() {
+    if (!window.Capacitor || !window.Capacitor.Plugins || !window.Capacitor.Plugins.LocalNotifications) {
+        return;
+    }
+
+    if (window._notifActionListenerInitialized) return;
+    window._notifActionListenerInitialized = true;
+
+    window.Capacitor.Plugins.LocalNotifications.addListener('localNotificationActionPerformed', async (action) => {
+        console.log('[FlowTick Notifications] Action performed:', action);
+        const actionId = action.actionId;
+        const notification = action.notification || {};
+        const extra = notification.extra || {};
+        const itemId = extra.itemId;
+        const itemType = extra.itemType || 'task';
+
+        // Timer actions
+        if (notification.id === 888888) {
+            if (actionId === 'timer_pause') {
+                if (typeof window.pausePomodoro === 'function') {
+                    window.pausePomodoro();
+                }
+            } else if (actionId === 'timer_resume') {
+                if (typeof window.resumePomodoro === 'function') {
+                    window.resumePomodoro();
+                }
+            } else if (actionId === 'timer_stop') {
+                if (typeof window.resetPomodoro === 'function') {
+                    window.resetPomodoro();
+                }
+            } else if (actionId === 'tap') {
+                if (typeof window.navigateToPage === 'function') {
+                    window.navigateToPage('pomodoro-page', true);
+                }
+            }
+            return;
+        }
+
+        // Task & Habit actions
+        if (actionId === 'mark_done' && itemId) {
+            handleCompleteTaskAction(itemId, itemType, notification.title);
+        } else if (actionId === 'wont_do' && itemId) {
+            handleCancelTaskAction(itemId, itemType, notification.title);
+        } else if (actionId === 'tap') {
+            if (itemId && typeof window.showItemDetails === 'function') {
+                window.showItemDetails(itemId);
+            }
+        }
+    });
+}
+
+window.handleCompleteTaskAction = handleCompleteTaskAction;
+window.handleCancelTaskAction = handleCancelTaskAction;
+window.initNotificationActionListeners = initNotificationActionListeners;
+
+// Pre-register channels and action listeners immediately and on load
 registerNotificationChannels();
+initNotificationActionListeners();
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', registerNotificationChannels);
+    document.addEventListener('DOMContentLoaded', () => {
+        registerNotificationChannels();
+        initNotificationActionListeners();
+    });
 } else {
     registerNotificationChannels();
+    initNotificationActionListeners();
 }
 
 function getNextOccurrenceTime(startDateStr, startTimeStr, frequency, specificDays, customNum, customUnit, relativeToNow = true) {
@@ -861,7 +1033,7 @@ function initMissedNotificationsUI() {
     renderMissedNotifications();
 }
 
-function scheduleMobileNotification(id, title, body, triggerTime, frequency, soundName) {
+function scheduleMobileNotification(id, title, body, triggerTime, frequency, soundName, extraData = null, actionTypeId = null) {
     const triggerTimestamp = triggerTime instanceof Date ? triggerTime.getTime() : new Date(triggerTime).getTime();
     const now = Date.now();
     const delayMs = triggerTimestamp - now;
@@ -902,6 +1074,16 @@ function scheduleMobileNotification(id, title, body, triggerTime, frequency, sou
             ongoing: false,
             autoCancel: true
         };
+
+        if (actionTypeId) {
+            notifItem.actionTypeId = actionTypeId;
+        } else if (extraData && extraData.itemId) {
+            notifItem.actionTypeId = 'TASK_ACTIONS';
+        }
+
+        if (extraData) {
+            notifItem.extra = extraData;
+        }
 
         if (!isImmediate) {
             const scheduleOpts = {
@@ -967,21 +1149,39 @@ function scheduleMobileNotification(id, title, body, triggerTime, frequency, sou
     }
 }
 
-function updateMobileTimerNotification(isWork, timeLeft) {
+function updateMobileTimerNotification(isWork, timeLeft, isRunning = true, expectedEnd = null) {
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+        registerNotificationChannels();
         const mins = Math.floor(timeLeft / 60);
         const secs = timeLeft % 60;
         const timeStr = `${mins}:${String(secs).padStart(2, '0')} remaining`;
 
+        const actionTypeId = isRunning ? 'TIMER_RUNNING_ACTIONS' : 'TIMER_PAUSED_ACTIONS';
+        const title = isWork 
+            ? (isRunning ? '🍅 Focus Session Active' : '⏸️ Focus Session Paused')
+            : (isRunning ? '☕ Break Session Active' : '⏸️ Break Session Paused');
+
+        const notif = {
+            id: 888888,
+            title: title,
+            body: timeStr,
+            channelId: 'flowtick-timer-live-v6',
+            ongoing: true, // Pinned in notification drawer
+            autoCancel: false,
+            actionTypeId: actionTypeId,
+            extra: {
+                isWorkSession: isWork,
+                timeLeft: timeLeft,
+                isRunning: isRunning
+            }
+        };
+
+        if (isRunning && expectedEnd) {
+            notif.extra.chronometer = expectedEnd;
+        }
+
         window.Capacitor.Plugins.LocalNotifications.schedule({
-            notifications: [{
-                id: 888888,
-                title: isWork ? '🍅 Focus Session Active' : '☕ Break Session Active',
-                body: timeStr,
-                channelId: 'flowtick-timer-live-v6',
-                ongoing: true,
-                autoCancel: false
-            }]
+            notifications: [notif]
         }).catch(err => {
             console.warn('[LiveTimer] Update notification error:', err);
         });
@@ -1067,7 +1267,9 @@ function scheduleItemNotifications(item) {
                 notifBody,
                 triggerTime,
                 null,
-                'success.mp3'
+                'success.mp3',
+                { itemId: item.id, itemType: item.type || 'task' },
+                'TASK_ACTIONS'
             );
         }
     }
@@ -1082,7 +1284,9 @@ function scheduleItemNotifications(item) {
                 `The deadline for "${item.title}" has passed.`,
                 triggerTime,
                 null,
-                'success.mp3'
+                'success.mp3',
+                { itemId: item.id, itemType: item.type || 'task' },
+                'TASK_ACTIONS'
             );
         }
     }
@@ -1510,15 +1714,234 @@ let isWorkSession = true;
 
 // SVG arc circumference: 2π × r where r=75 (the timer circle radius in the SVG).
 const ARC_LENGTH = 471.24;
+const cx = 120, cy = 120, r = 100;
+
+function updateTimeDisplay() {
+    const clockText = document.getElementById('timer-clock');
+    const progressPath = document.getElementById('timer-progress');
+    const mins = Math.floor(timeLeft / 60).toString().padStart(2, '0');
+    const secs = (timeLeft % 60).toString().padStart(2, '0');
+    const newText = `${mins}:${secs}`;
+    if (clockText && clockText.textContent !== newText) {
+        clockText.textContent = newText;
+    }
+    if (isRunning && progressPath) {
+        const totalSecs = (isWorkSession ? sessionMinutes : Math.round(sessionMinutes / 5)) * 60;
+        const ratio = timeLeft / totalSecs;
+        const newOffset = ARC_LENGTH - (ratio * ARC_LENGTH);
+        if (progressPath.style.strokeDashoffset !== `${newOffset}`) {
+            progressPath.style.strokeDashoffset = newOffset;
+        }
+    }
+}
+
+function updateKnobByMinutes(minutes) {
+    if (isRunning) return;
+    const knob = document.getElementById('timer-knob');
+    const progressPath = document.getElementById('timer-progress');
+    const sessionVal = document.getElementById('session-val');
+    const breakVal = document.getElementById('break-val');
+
+    sessionMinutes = Math.max(5, Math.min(120, minutes));
+    let fraction = (sessionMinutes - 5) / 115;
+    let angleDeg = 135 + (fraction * 270);
+    let angleRad = angleDeg * Math.PI / 180;
+    if (knob) {
+        knob.setAttribute('cx', cx + r * Math.cos(angleRad));
+        knob.setAttribute('cy', cy + r * Math.sin(angleRad));
+    }
+    if (progressPath) {
+        progressPath.style.strokeDashoffset = ARC_LENGTH - (fraction * ARC_LENGTH);
+    }
+    if (sessionVal) sessionVal.textContent = sessionMinutes;
+    if (breakVal) breakVal.textContent = Math.round(sessionMinutes / 5);
+    timeLeft = sessionMinutes * 60;
+    updateTimeDisplay();
+}
+
+function cancelAllPomodoroNotifications() {
+    if (typeof cancelMobileNotification === 'function') {
+        cancelMobileNotification(999991);
+        cancelMobileNotification(999992);
+        cancelMobileNotification(999993);
+        cancelMobileNotification(888888);
+    }
+}
+
+function pausePomodoro() {
+    if (!isRunning) return;
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+    isRunning = false;
+
+    const expectedEnd = localStorage.getItem('pomodoro_expected_end');
+    if (expectedEnd) {
+        const remainingMs = parseInt(expectedEnd, 10) - Date.now();
+        timeLeft = Math.max(0, Math.ceil(remainingMs / 1000));
+    }
+    localStorage.removeItem('pomodoro_expected_end');
+
+    const btnStart = document.getElementById('btn-start-timer');
+    if (btnStart) btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Resume';
+
+    if (typeof cancelMobileNotification === 'function') {
+        cancelMobileNotification(999991);
+        cancelMobileNotification(999992);
+        cancelMobileNotification(999993);
+    }
+
+    updateTimeDisplay();
+    if (typeof updateMobileTimerNotification === 'function') {
+        updateMobileTimerNotification(isWorkSession, timeLeft, false, null);
+    }
+}
+
+function resumePomodoro() {
+    if (isRunning || timeLeft <= 0) return;
+    isRunning = true;
+
+    const btnStart = document.getElementById('btn-start-timer');
+    if (btnStart) btnStart.innerHTML = '<i class="fa-solid fa-pause"></i> Pause';
+
+    const knob = document.getElementById('timer-knob');
+    if (knob) knob.style.display = 'none';
+
+    const expectedEnd = Date.now() + (timeLeft * 1000);
+    localStorage.setItem('pomodoro_expected_end', expectedEnd);
+
+    if (typeof scheduleMobileNotification === 'function') {
+        scheduleMobileNotification(
+            999993,
+            isWorkSession ? 'Focus Session Finished!' : 'Break Time Finished!',
+            isWorkSession ? 'Great focus! Time for a short break.' : 'Break over! Ready to focus on the next task?',
+            expectedEnd,
+            null,
+            'pomodoro.mp3'
+        );
+    }
+
+    if (typeof updateMobileTimerNotification === 'function') {
+        updateMobileTimerNotification(isWorkSession, timeLeft, true, expectedEnd);
+    }
+
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = setInterval(() => {
+        syncTimerWithTimePassed();
+    }, 200);
+}
+
+function resetPomodoro() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+    isRunning = false;
+    isWorkSession = true;
+
+    const knob = document.getElementById('timer-knob');
+    if (knob) knob.style.display = 'block';
+
+    const statusText = document.getElementById('timer-status');
+    if (statusText) statusText.innerHTML = '<i class="fa-solid fa-bullseye"></i> Focus';
+
+    const progressPath = document.getElementById('timer-progress');
+    if (progressPath) progressPath.style.stroke = 'var(--color-ticktick-blue)';
+
+    const btnStart = document.getElementById('btn-start-timer');
+    if (btnStart) btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Start';
+
+    localStorage.removeItem('pomodoro_expected_end');
+    cancelAllPomodoroNotifications();
+    updateKnobByMinutes(25);
+}
+
+window.pausePomodoro = pausePomodoro;
+window.resumePomodoro = resumePomodoro;
+window.resetPomodoro = resetPomodoro;
+
+function syncTimerWithTimePassed() {
+    if (!isRunning) return;
+    const expectedEnd = localStorage.getItem('pomodoro_expected_end');
+    if (expectedEnd) {
+        const remainingMs = parseInt(expectedEnd, 10) - Date.now();
+        timeLeft = Math.max(0, Math.ceil(remainingMs / 1000));
+        updateTimeDisplay();
+
+        if (timeLeft <= 0) {
+            playSound('pomodoro');
+            cancelAllPomodoroNotifications();
+
+            const statusText = document.getElementById('timer-status');
+            const progressPath = document.getElementById('timer-progress');
+            const btnStart = document.getElementById('btn-start-timer');
+            const knob = document.getElementById('timer-knob');
+
+            if (isWorkSession) {
+                isWorkSession = false;
+                if (statusText) statusText.innerHTML = '<i class="fa-solid fa-mug-hot"></i> Break';
+                if (progressPath) progressPath.style.stroke = '#73D13D';
+                showToast('Focus finished! Break started.', 'info');
+                timeLeft = Math.round(sessionMinutes / 5) * 60;
+                const nextEnd = Date.now() + (timeLeft * 1000);
+                localStorage.setItem('pomodoro_expected_end', nextEnd);
+
+                if (typeof scheduleMobileNotification === 'function') {
+                    scheduleMobileNotification(
+                        999991,
+                        'Focus Session Finished!',
+                        'Great focus! Time for a short break.',
+                        Date.now() + 100,
+                        null,
+                        'pomodoro.mp3'
+                    );
+                    scheduleMobileNotification(
+                        999993,
+                        'Break Time Finished!',
+                        'Break over! Ready to focus on the next task?',
+                        nextEnd,
+                        null,
+                        'pomodoro.mp3'
+                    );
+                }
+                updateTimeDisplay();
+                if (typeof updateMobileTimerNotification === 'function') {
+                    updateMobileTimerNotification(false, timeLeft, true, nextEnd);
+                }
+            } else {
+                if (timerInterval) {
+                    clearInterval(timerInterval);
+                    timerInterval = null;
+                }
+                isRunning = false;
+                isWorkSession = true;
+                if (statusText) statusText.innerHTML = '<i class="fa-solid fa-bullseye"></i> Focus';
+                if (progressPath) progressPath.style.stroke = 'var(--color-ticktick-blue)';
+                if (btnStart) btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Start';
+                if (knob) knob.style.display = 'block';
+                showToast('Break over! Ready to focus?', 'info');
+                localStorage.removeItem('pomodoro_expected_end');
+
+                if (typeof scheduleMobileNotification === 'function') {
+                    scheduleMobileNotification(
+                        999992,
+                        'Break Time Finished!',
+                        'Break over! Ready to focus on the next task?',
+                        Date.now() + 100,
+                        null,
+                        'pomodoro.mp3'
+                    );
+                }
+                cancelAllPomodoroNotifications();
+                updateKnobByMinutes(sessionMinutes);
+            }
+        }
+    }
+}
 
 function initPomodoroDrag() {
     const svgContainer = document.getElementById('svg-container');
-    const knob = document.getElementById('timer-knob');
-    const progressPath = document.getElementById('timer-progress');
-    const clockText = document.getElementById('timer-clock');
-    const sessionVal = document.getElementById('session-val');
-    const breakVal = document.getElementById('break-val');
-    const statusText = document.getElementById('timer-status');
     const btnStart = document.getElementById('btn-start-timer');
     const btnReset = document.getElementById('btn-reset-timer');
     const quickBtns = document.querySelectorAll('.quick-time-btn');
@@ -1527,7 +1950,6 @@ function initPomodoroDrag() {
     const taskDoneBtn = document.getElementById('pomodoro-mark-done');
 
     let isDragging = false;
-    let cx = 120, cy = 120, r = 100;
 
     if (taskSelect && taskDoneBtn) {
         taskSelect.addEventListener('change', (e) => {
@@ -1540,42 +1962,6 @@ function initPomodoroDrag() {
                 });
             }
         });
-    }
-
-    function updateKnobByMinutes(minutes) {
-        if (isRunning) return;
-        sessionMinutes = Math.max(5, Math.min(120, minutes));
-        let fraction = (sessionMinutes - 5) / 115;
-        let angleDeg = 135 + (fraction * 270);
-        let angleRad = angleDeg * Math.PI / 180;
-        if (knob) {
-            knob.setAttribute('cx', cx + r * Math.cos(angleRad));
-            knob.setAttribute('cy', cy + r * Math.sin(angleRad));
-        }
-        if (progressPath) {
-            progressPath.style.strokeDashoffset = ARC_LENGTH - (fraction * ARC_LENGTH);
-        }
-        if (sessionVal) sessionVal.textContent = sessionMinutes;
-        if (breakVal) breakVal.textContent = Math.round(sessionMinutes / 5);
-        timeLeft = sessionMinutes * 60;
-        updateTimeDisplay();
-    }
-
-    function updateTimeDisplay() {
-        const mins = Math.floor(timeLeft / 60).toString().padStart(2, '0');
-        const secs = (timeLeft % 60).toString().padStart(2, '0');
-        const newText = `${mins}:${secs}`;
-        if (clockText && clockText.textContent !== newText) {
-            clockText.textContent = newText;
-        }
-        if (isRunning && progressPath) {
-            const totalSecs = (isWorkSession ? sessionMinutes : Math.round(sessionMinutes / 5)) * 60;
-            const ratio = timeLeft / totalSecs;
-            const newOffset = ARC_LENGTH - (ratio * ARC_LENGTH);
-            if (progressPath.style.strokeDashoffset !== `${newOffset}`) {
-                progressPath.style.strokeDashoffset = newOffset;
-            }
-        }
     }
 
     if (quickBtns) {
@@ -1615,90 +2001,6 @@ function initPomodoroDrag() {
     window.addEventListener('touchmove', handleDrag, { passive: false });
     window.addEventListener('touchend', () => { isDragging = false; });
 
-    function cancelAllPomodoroNotifications() {
-        if (cancelMobileNotification) {
-            cancelMobileNotification(999991);
-            cancelMobileNotification(999992);
-            cancelMobileNotification(999993);
-            cancelMobileNotification(888888);
-        }
-    }
-
-    function syncTimerWithTimePassed() {
-        if (!isRunning) return;
-        const expectedEnd = localStorage.getItem('pomodoro_expected_end');
-        if (expectedEnd) {
-            const remainingMs = parseInt(expectedEnd, 10) - Date.now();
-            timeLeft = Math.max(0, Math.ceil(remainingMs / 1000));
-            updateTimeDisplay();
-
-            if (timeLeft > 0 && updateMobileTimerNotification) {
-                if (typeof window.lastNotificationTime === 'undefined' || window.lastNotificationTime !== timeLeft) {
-                    window.lastNotificationTime = timeLeft;
-                    updateMobileTimerNotification(isWorkSession, timeLeft);
-                }
-            }
-
-            if (timeLeft <= 0) {
-                playSound('pomodoro');
-                cancelAllPomodoroNotifications();
-                delete window.lastNotificationTime;
-
-                if (isWorkSession) {
-                    isWorkSession = false;
-                    if (statusText) statusText.innerHTML = '<i class="fa-solid fa-mug-hot"></i> Break';
-                    if (progressPath) progressPath.style.stroke = '#73D13D';
-                    showToast('Focus finished! Break started.', 'info');
-                    timeLeft = Math.round(sessionMinutes / 5) * 60;
-                    const nextEnd = Date.now() + (timeLeft * 1000);
-                    localStorage.setItem('pomodoro_expected_end', nextEnd);
-                    
-                    if (scheduleMobileNotification) {
-                        scheduleMobileNotification(
-                            999991,
-                            'Focus Session Finished!',
-                            'Great focus! Time for a short break.',
-                            Date.now() + 100,
-                            null,
-                            'pomodoro.mp3'
-                        );
-                        scheduleMobileNotification(
-                            999993,
-                            'Break Time Finished!',
-                            'Break over! Ready to focus on the next task?',
-                            nextEnd,
-                            null,
-                            'pomodoro.mp3'
-                        );
-                    }
-                    updateTimeDisplay();
-                } else {
-                    clearInterval(timerInterval);
-                    isRunning = false;
-                    isWorkSession = true;
-                    if (statusText) statusText.innerHTML = '<i class="fa-solid fa-bullseye"></i> Focus';
-                    if (progressPath) progressPath.style.stroke = 'var(--color-ticktick-blue)';
-                    if (btnStart) btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Start';
-                    if (knob) knob.style.display = 'block';
-                    showToast('Break over! Ready to focus?', 'info');
-                    localStorage.removeItem('pomodoro_expected_end');
-                    
-                    if (scheduleMobileNotification) {
-                        scheduleMobileNotification(
-                            999992,
-                            'Break Time Finished!',
-                            'Break over! Ready to focus on the next task?',
-                            Date.now() + 100,
-                            null,
-                            'pomodoro.mp3'
-                        );
-                    }
-                    updateKnobByMinutes(sessionMinutes);
-                }
-            }
-        }
-    }
-
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
             syncTimerWithTimePassed();
@@ -1709,56 +2011,16 @@ function initPomodoroDrag() {
     if (btnStart) {
         btnStart.addEventListener('click', () => {
             if (isRunning) {
-                clearInterval(timerInterval);
-                isRunning = false;
-                btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Resume';
-                localStorage.removeItem('pomodoro_expected_end');
-                cancelAllPomodoroNotifications();
-                delete window.lastNotificationTime;
+                pausePomodoro();
             } else {
-                isRunning = true;
-                btnStart.innerHTML = '<i class="fa-solid fa-pause"></i> Pause';
-                if (knob) knob.style.display = 'none'; 
-                
-                const expectedEnd = Date.now() + (timeLeft * 1000);
-                localStorage.setItem('pomodoro_expected_end', expectedEnd);
-                
-                if (scheduleMobileNotification) {
-                    scheduleMobileNotification(
-                        999993,
-                        isWorkSession ? 'Focus Session Finished!' : 'Break Time Finished!',
-                        isWorkSession ? 'Great focus! Time for a short break.' : 'Break over! Ready to focus on the next task?',
-                        expectedEnd,
-                        null,
-                        'pomodoro.mp3'
-                    );
-                }
-
-                if (timeLeft > 0 && updateMobileTimerNotification) {
-                    window.lastNotificationTime = timeLeft;
-                    updateMobileTimerNotification(isWorkSession, timeLeft);
-                }
-
-                timerInterval = setInterval(() => {
-                    syncTimerWithTimePassed();
-                }, 200);
+                resumePomodoro();
             }
         });
     }
 
     if (btnReset) {
         btnReset.addEventListener('click', () => {
-            clearInterval(timerInterval);
-            isRunning = false;
-            isWorkSession = true;
-            if (knob) knob.style.display = 'block';
-            if (statusText) statusText.innerHTML = '<i class="fa-solid fa-bullseye"></i> Focus';
-            if (progressPath) progressPath.style.stroke = 'var(--color-ticktick-blue)';
-            if (btnStart) btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Start';
-            localStorage.removeItem('pomodoro_expected_end');
-            cancelAllPomodoroNotifications();
-            delete window.lastNotificationTime;
-            updateKnobByMinutes(25);
+            resetPomodoro();
         });
     }
 
@@ -3236,7 +3498,7 @@ function sortAndRenderDashboard() {
     if (!container) return;
 
     const now = new Date();
-    let fingerprint = `${window.currentTaskFilter || 'all'}:${window.currentTaskSort || 'default'}|`;
+    let fingerprint = `${window.currentTaskFilter || 'all'}:${window.currentTaskSort || 'default'}:${window.customFilterStartDate || ''}:${window.customFilterEndDate || ''}|`;
     (window.activeTasksList || []).forEach(item => {
         let startInstant = item.startDate ? parseLocalISOString(item.startDate, item.startTime || '00:00') : now;
         let dueInstant = item.dueDate ? parseLocalISOString(item.dueDate, item.dueTime || '23:59') : null;
@@ -3280,44 +3542,40 @@ function sortAndRenderDashboard() {
             return { start: monday, end: sunday };
         };
         const weekBounds = getWeekBounds(now);
+        const weekStartStr = weekBounds.start.toLocaleDateString('sv');
+        const weekEndStr = weekBounds.end.toLocaleDateString('sv');
 
         filteredTasks = filteredTasks.filter(item => {
-            let startInstant = item.startDate ? parseLocalISOString(item.startDate, item.startTime || '00:00') : now;
-            let dueInstant = item.dueDate ? parseLocalISOString(item.dueDate, item.dueTime || '23:59') : null;
+            const rawStart = item.startDate || item.dueDate;
+            const rawDue = item.dueDate || item.startDate;
+            if (!rawStart && !rawDue) return false;
             
-            const isOverdue = dueInstant && dueInstant < now;
-            const isUpcoming = startInstant > now;
-            const isCurrent = !isOverdue && !isUpcoming;
-            
-            if (isOverdue || isCurrent) {
-                return true;
-            }
+            const taskStart = rawStart <= rawDue ? rawStart : rawDue;
+            const taskEnd = rawDue >= rawStart ? rawDue : rawStart;
 
-            const targetDateStr = item.dueDate || item.startDate;
-            if (!targetDateStr) return false;
-            
             if (filterVal === 'today') {
-                return targetDateStr === todayStr;
+                return taskStart <= todayStr && taskEnd >= todayStr;
             }
             if (filterVal === 'tomorrow') {
-                return targetDateStr === tomorrowStr;
+                return taskStart <= tomorrowStr && taskEnd >= tomorrowStr;
             }
             if (filterVal === 'week') {
-                const tDate = new Date(targetDateStr);
-                tDate.setHours(0,0,0,0);
-                return tDate >= weekBounds.start && tDate <= weekBounds.end;
+                return taskStart <= weekEndStr && taskEnd >= weekStartStr;
             }
             if (filterVal === 'month') {
-                const tDate = new Date(targetDateStr);
-                return tDate.getFullYear() === now.getFullYear() && tDate.getMonth() === now.getMonth();
+                const monthStartStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+                const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+                const monthEndStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+                return taskStart <= monthEndStr && taskEnd >= monthStartStr;
             }
             if (filterVal === 'year') {
-                const tDate = new Date(targetDateStr);
-                return tDate.getFullYear() === now.getFullYear();
+                const yearStartStr = `${now.getFullYear()}-01-01`;
+                const yearEndStr = `${now.getFullYear()}-12-31`;
+                return taskStart <= yearEndStr && taskEnd >= yearStartStr;
             }
             if (filterVal === 'custom') {
                 if (!window.customFilterStartDate || !window.customFilterEndDate) return true;
-                return targetDateStr >= window.customFilterStartDate && targetDateStr <= window.customFilterEndDate;
+                return taskStart <= window.customFilterEndDate && taskEnd >= window.customFilterStartDate;
             }
             return true;
         });
@@ -4346,36 +4604,84 @@ function initRouter() {
     });
 }
 
-function initBackButtonHandler() {
-    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
-        window.Capacitor.Plugins.App.addListener('backButton', () => {
-            // 1. Close sidebar overlay if active
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebar-overlay');
-            if (sidebar && sidebar.classList.contains('active')) {
-                sidebar.classList.remove('active');
-                overlay.classList.remove('active');
-                return;
-            }
+let lastBackPressTime = 0;
 
-            // 2. Close active modals
-            const activeModals = document.querySelectorAll('.modal.active');
-            if (activeModals.length > 0) {
-                activeModals.forEach(modal => modal.classList.remove('active'));
-                return;
-            }
+function handleAppBackButton() {
+    // 1. Close open dropdowns or popups
+    const openDropdowns = document.querySelectorAll('.custom-select-options.show, .custom-select-wrapper.open, .task-dropdown.show, .time-picker-popup.open, #notification-dropdown.active');
+    if (openDropdowns.length > 0) {
+        openDropdowns.forEach(el => el.classList.remove('show', 'open', 'active'));
+        return;
+    }
 
-            // 3. Go back in history
-            if (window.navHistory && window.navHistory.length > 1) {
-                window.navHistory.pop(); // Pop current page
-                const prevPage = window.navHistory[window.navHistory.length - 1];
-                navigateToPage(prevPage, false);
-                return;
-            }
+    // 2. Close sidebar overlay if active
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    if (sidebar && sidebar.classList.contains('active')) {
+        sidebar.classList.remove('active');
+        if (overlay) overlay.classList.remove('active');
+        return;
+    }
 
-            // 4. Default native exit
+    // 3. Close active modals
+    const activeModals = document.querySelectorAll('.modal.active');
+    if (activeModals.length > 0) {
+        activeModals.forEach(modal => modal.classList.remove('active'));
+        return;
+    }
+
+    // 4. Go back in navigation history
+    if (window.navHistory && window.navHistory.length > 1) {
+        window.navHistory.pop(); // Pop current page
+        const prevPage = window.navHistory[window.navHistory.length - 1];
+        navigateToPage(prevPage, false);
+        return;
+    }
+
+    // If on a page other than tasks-page, navigate back to tasks-page
+    const activeSection = document.querySelector('.page-section.active');
+    if (activeSection && activeSection.id !== 'tasks-page') {
+        window.navHistory = ['tasks-page'];
+        navigateToPage('tasks-page', false);
+        return;
+    }
+
+    // 5. On the root page: require double back press within 2s to exit
+    const now = Date.now();
+    if (now - lastBackPressTime < 2000) {
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
             window.Capacitor.Plugins.App.exitApp();
-        });
+        }
+    } else {
+        lastBackPressTime = now;
+        showToast('Press back again to exit', 'info', false);
+    }
+}
+
+function initBackButtonHandler() {
+    let attached = false;
+    const attach = () => {
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+            if (!attached) {
+                attached = true;
+                window.Capacitor.Plugins.App.addListener('backButton', () => {
+                    handleAppBackButton();
+                });
+                console.log('[FlowTick] App backButton listener registered');
+            }
+            return true;
+        }
+        return false;
+    };
+
+    if (!attach()) {
+        let attempts = 0;
+        const interval = setInterval(() => {
+            attempts++;
+            if (attach() || attempts > 20) {
+                clearInterval(interval);
+            }
+        }, 150);
     }
 }
 

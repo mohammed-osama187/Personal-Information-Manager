@@ -1487,7 +1487,7 @@ export function sortAndRenderDashboard() {
     if (!container) return;
 
     const now = new Date();
-    let fingerprint = `${window.currentTaskFilter || 'all'}:${window.currentTaskSort || 'default'}|`;
+    let fingerprint = `${window.currentTaskFilter || 'all'}:${window.currentTaskSort || 'default'}:${window.customFilterStartDate || ''}:${window.customFilterEndDate || ''}|`;
     (window.activeTasksList || []).forEach(item => {
         let startInstant = item.startDate ? parseLocalISOString(item.startDate, item.startTime || '00:00') : now;
         let dueInstant = item.dueDate ? parseLocalISOString(item.dueDate, item.dueTime || '23:59') : null;
@@ -1531,44 +1531,40 @@ export function sortAndRenderDashboard() {
             return { start: monday, end: sunday };
         };
         const weekBounds = getWeekBounds(now);
+        const weekStartStr = weekBounds.start.toLocaleDateString('sv');
+        const weekEndStr = weekBounds.end.toLocaleDateString('sv');
 
         filteredTasks = filteredTasks.filter(item => {
-            let startInstant = item.startDate ? parseLocalISOString(item.startDate, item.startTime || '00:00') : now;
-            let dueInstant = item.dueDate ? parseLocalISOString(item.dueDate, item.dueTime || '23:59') : null;
+            const rawStart = item.startDate || item.dueDate;
+            const rawDue = item.dueDate || item.startDate;
+            if (!rawStart && !rawDue) return false;
             
-            const isOverdue = dueInstant && dueInstant < now;
-            const isUpcoming = startInstant > now;
-            const isCurrent = !isOverdue && !isUpcoming;
-            
-            if (isOverdue || isCurrent) {
-                return true;
-            }
+            const taskStart = rawStart <= rawDue ? rawStart : rawDue;
+            const taskEnd = rawDue >= rawStart ? rawDue : rawStart;
 
-            const targetDateStr = item.dueDate || item.startDate;
-            if (!targetDateStr) return false;
-            
             if (filterVal === 'today') {
-                return targetDateStr === todayStr;
+                return taskStart <= todayStr && taskEnd >= todayStr;
             }
             if (filterVal === 'tomorrow') {
-                return targetDateStr === tomorrowStr;
+                return taskStart <= tomorrowStr && taskEnd >= tomorrowStr;
             }
             if (filterVal === 'week') {
-                const tDate = new Date(targetDateStr);
-                tDate.setHours(0,0,0,0);
-                return tDate >= weekBounds.start && tDate <= weekBounds.end;
+                return taskStart <= weekEndStr && taskEnd >= weekStartStr;
             }
             if (filterVal === 'month') {
-                const tDate = new Date(targetDateStr);
-                return tDate.getFullYear() === now.getFullYear() && tDate.getMonth() === now.getMonth();
+                const monthStartStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+                const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+                const monthEndStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+                return taskStart <= monthEndStr && taskEnd >= monthStartStr;
             }
             if (filterVal === 'year') {
-                const tDate = new Date(targetDateStr);
-                return tDate.getFullYear() === now.getFullYear();
+                const yearStartStr = `${now.getFullYear()}-01-01`;
+                const yearEndStr = `${now.getFullYear()}-12-31`;
+                return taskStart <= yearEndStr && taskEnd >= yearStartStr;
             }
             if (filterVal === 'custom') {
                 if (!window.customFilterStartDate || !window.customFilterEndDate) return true;
-                return targetDateStr >= window.customFilterStartDate && targetDateStr <= window.customFilterEndDate;
+                return taskStart <= window.customFilterEndDate && taskEnd >= window.customFilterStartDate;
             }
             return true;
         });

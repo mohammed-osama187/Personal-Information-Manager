@@ -2,5 +2,12 @@
   "appId": "com.flowtick.app",
   "appName": "FlowTick",
   "webDir": "build",
-  "bundledWebRuntime": false
+  "bundledWebRuntime": false,
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_launcher_round",
+      "iconColor": "#2F7BF6",
+      "sound": "success.wav"
+    }
+  }
 }

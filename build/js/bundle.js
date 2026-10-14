@@ -520,35 +520,95 @@ async function syncGuestDataToFirebase(userId) {
 
 
 /* ===== js/notifications.js ===== */
-// Pre-register notification channels at the earliest possible moment
-if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
-    const _ln = window.Capacitor.Plugins.LocalNotifications;
+// Register native notification channels on Android 8+ (API 26+)
+async function registerNotificationChannels() {
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+        const _ln = window.Capacitor.Plugins.LocalNotifications;
+        try {
+            await _ln.createChannel({
+                id: 'flowtick-success-channel-v6',
+                name: 'FlowTick Alerts',
+                description: 'Task, event and habit reminders',
+                importance: 5,
+                sound: 'success', // Android resource raw/success without extension
+                visibility: 1,
+                vibration: true,
+                lights: true
+            });
 
-    // Channel for tasks, habits and events (success.mp3 -> resource 'success')
-    _ln.createChannel({
-        id: 'flowtick-success-channel-v6',
-        name: 'FlowTick Alerts',
-        importance: 5,
-        sound: 'success', // Android requires resource name without extension
-        visibility: 1
-    });
+            await _ln.createChannel({
+                id: 'flowtick-pomodoro-channel-v6',
+                name: 'FlowTick Pomodoro',
+                description: 'Pomodoro focus and break alarm',
+                importance: 5,
+                sound: 'pomodoro', // Android resource raw/pomodoro without extension
+                visibility: 1,
+                vibration: true,
+                lights: true
+            });
 
-    // Channel for Pomodoro focus/break alarms (pomodoro.mp3 -> resource 'pomodoro')
-    _ln.createChannel({
-        id: 'flowtick-pomodoro-channel-v6',
-        name: 'FlowTick Pomodoro',
-        importance: 5,
-        sound: 'pomodoro', // Android requires resource name without extension
-        visibility: 1
-    });
+            await _ln.createChannel({
+                id: 'flowtick-timer-live-v6',
+                name: 'FlowTick Live Timer',
+                description: 'Silent persistent countdown timer',
+                importance: 2,   // LOW — silent, stays in drawer
+                visibility: 1,
+                vibration: false,
+                lights: false
+            });
+            console.log('[FlowTick Notifications] Native channels registered');
+        } catch (err) {
+            console.warn('[FlowTick Notifications] Channel creation warning:', err);
+        }
+    }
+}
 
-    // SILENT channel for the live countdown ticker
-    _ln.createChannel({
-        id: 'flowtick-timer-live-v6',
-        name: 'FlowTick Live Timer',
-        importance: 2,   // LOW — silent, stays in drawer
-        visibility: 1
-    });
+// Request notification permissions for both native Android (Capacitor) and Web
+async function requestNotificationPermissions() {
+    // 1. Native Capacitor on Android/iOS
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+        try {
+            const check = await window.Capacitor.Plugins.LocalNotifications.checkPermissions();
+            if (check.display === 'granted') {
+                await registerNotificationChannels();
+                return true;
+            }
+            const request = await window.Capacitor.Plugins.LocalNotifications.requestPermissions();
+            await registerNotificationChannels();
+            const granted = (request.display === 'granted');
+            if (granted) {
+                showToast('Notifications enabled on your device!', 'success');
+            }
+            return granted;
+        } catch (err) {
+            console.error('[FlowTick Notifications] Native permission request failed:', err);
+        }
+    }
+
+    // 2. Web browser fallback
+    if ("Notification" in window) {
+        if (Notification.permission === 'default') {
+            try {
+                const perm = await Notification.requestPermission();
+                return perm === 'granted';
+            } catch (e) {
+                return false;
+            }
+        }
+        return Notification.permission === 'granted';
+    }
+    return false;
+}
+
+window.registerNotificationChannels = registerNotificationChannels;
+window.requestNotificationPermissions = requestNotificationPermissions;
+
+// Pre-register channels immediately and when DOM is loaded
+registerNotificationChannels();
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', registerNotificationChannels);
+} else {
+    registerNotificationChannels();
 }
 
 function getNextOccurrenceTime(startDateStr, startTimeStr, frequency, specificDays, customNum, customUnit, relativeToNow = true) {
@@ -778,26 +838,8 @@ function initMissedNotificationsUI() {
             renderMissedNotifications();
         }
 
-        // Request permission on bell click if default
-        if ("Notification" in window && Notification.permission === "default") {
-            Notification.requestPermission().then(permission => {
-                if (permission === 'granted') {
-                    showToast('Notifications enabled!', 'success');
-                    
-                    // Register the native Android audio channel
-                    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
-                        window.Capacitor.Plugins.LocalNotifications.createChannel({
-                            id: 'flowtick-success-channel-v6',
-                            name: 'FlowTick Alerts',
-                            description: 'Reminders with custom sound',
-                            importance: 5,
-                            sound: 'success', // Android requires resource name without extension
-                            visibility: 1
-                        });
-                    }
-                }
-            });
-        }
+        // Request permission on bell click if not granted
+        requestNotificationPermissions();
     });
 
     document.addEventListener('click', () => {
@@ -820,93 +862,106 @@ function initMissedNotificationsUI() {
 }
 
 function scheduleMobileNotification(id, title, body, triggerTime, frequency, soundName) {
-    const delayMs = new Date(triggerTime).getTime() - Date.now();
-    
-    if (delayMs <= 0 && !frequency) {
-        // إذا كان الميعاد قد فات منذ أقل من دقيقتين، نطلقه فوراً للمستخدم
-        if (delayMs >= -120000) {
-            console.log(`[MobileBridge] Notification missed recently (${Math.abs(delayMs)}ms ago). Triggering immediately.`);
-            return scheduleMobileNotification(id, title, body, new Date(Date.now() + 50), frequency, soundName);
-        } else {
-            // إذا كان قديماً، نضيفه لقائمة الإشعارات الفائتة مباشرة
-            console.log(`[MobileBridge] Notification missed. Adding to missed list.`);
-            const tDate = new Date(triggerTime);
-            const hours = String(tDate.getHours()).padStart(2, '0');
-            const mins = String(tDate.getMinutes()).padStart(2, '0');
-            addMissedNotification(`Overdue: ${title}`, `${hours}:${mins}`, 'overdue');
-            return;
-        }
-    }
+    const triggerTimestamp = triggerTime instanceof Date ? triggerTime.getTime() : new Date(triggerTime).getTime();
+    const now = Date.now();
+    const delayMs = triggerTimestamp - now;
 
-    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
-        const scheduleOpts = { at: new Date(triggerTime), allowWhileIdle: true };
-        if (frequency === 'daily') {
-            scheduleOpts.repeats = true;
-            scheduleOpts.every = 'day';
-        } else if (frequency === 'weekly') {
-            scheduleOpts.repeats = true;
-            scheduleOpts.every = 'week';
-        } else if (frequency === 'monthly') {
-            scheduleOpts.repeats = true;
-            scheduleOpts.every = 'month';
-        } else if (frequency === 'yearly') {
-            scheduleOpts.repeats = true;
-            scheduleOpts.every = 'year';
-        }
-
-        const sound = soundName || 'success.mp3';
-        const soundBase = sound.replace('.mp3', '');
-        const channelId = `flowtick-${soundBase}-channel-v6`;
-
-        // تحويل أمن للـ ID لضمان أنه رقم صحيح دائماً ولا يعطي NaN
-        let notifId = parseInt(id, 10);
-        if (isNaN(notifId)) {
-            // لو الـ ID نصي، بنعمل له Hash رقمي سريع
-            notifId = Math.abs(String(id).split("").reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0));
-        } else {
-            notifId = Math.abs(notifId);
-        }
-
-        // جدول الإشعار مباشرة، الـ Channels متكريتة فوق أول ما الملف بيفتح
-        window.Capacitor.Plugins.LocalNotifications.schedule({
-            notifications: [{
-                id: notifId,
-                title: title,
-                body: body,
-                schedule: scheduleOpts,
-                sound: soundBase,
-                channelId: channelId,
-                ongoing: false,
-                autoCancel: true,
-                foreground: true,
-                actionTypeId: '',
-                extra: null
-            }]
-        }).catch(err => console.error("Schedule error:", err));
-        
+    // Overdue by more than 2 minutes and not recurring -> mark as missed
+    if (delayMs <= -120000 && !frequency) {
+        console.log(`[MobileBridge] Notification missed (${Math.abs(delayMs)}ms ago). Adding to missed list.`);
+        const tDate = new Date(triggerTimestamp);
+        const hours = String(tDate.getHours()).padStart(2, '0');
+        const mins = String(tDate.getMinutes()).padStart(2, '0');
+        addMissedNotification(`Overdue: ${title}`, `${hours}:${mins}`, 'overdue');
         return;
     }
 
-    // الـ Fallback الخاص بالمتصفح (اللاب توب)
-    console.log(`[MobileBridge] Web fallback. Delay: ${delayMs}ms`);
-    
-    // طلب إذن الإشعارات من المتصفح لو مش مسموح بيه
+    // Safe 32-bit positive integer ID for Android AlarmManager & NotificationManager
+    let notifId = parseInt(id, 10);
+    if (isNaN(notifId)) {
+        notifId = Math.abs(String(id).split("").reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0));
+    }
+    notifId = (Math.abs(notifId) % 2000000000) + 1;
+
+    const sound = soundName || 'success.mp3';
+    const soundBase = sound.replace(/\.[^/.]+$/, "");
+    const channelId = `flowtick-${soundBase}-channel-v6`;
+
+    // Anything within 1000ms or already slightly passed is IMMEDIATE
+    const isImmediate = delayMs <= 1000 && !frequency;
+
+    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
+        registerNotificationChannels();
+
+        const notifItem = {
+            id: notifId,
+            title: title,
+            body: body,
+            sound: soundBase,
+            channelId: channelId,
+            ongoing: false,
+            autoCancel: true
+        };
+
+        if (!isImmediate) {
+            const scheduleOpts = {
+                at: new Date(triggerTimestamp),
+                allowWhileIdle: true
+            };
+            if (frequency === 'daily') {
+                scheduleOpts.repeats = true;
+                scheduleOpts.every = 'day';
+            } else if (frequency === 'weekly') {
+                scheduleOpts.repeats = true;
+                scheduleOpts.every = 'week';
+            } else if (frequency === 'monthly') {
+                scheduleOpts.repeats = true;
+                scheduleOpts.every = 'month';
+            } else if (frequency === 'yearly') {
+                scheduleOpts.repeats = true;
+                scheduleOpts.every = 'year';
+            }
+            notifItem.schedule = scheduleOpts;
+        }
+
+        window.Capacitor.Plugins.LocalNotifications.schedule({
+            notifications: [notifItem]
+        }).then(() => {
+            console.log(`[MobileBridge] Scheduled #${notifId} ("${title}") ${isImmediate ? 'IMMEDIATE' : 'at ' + new Date(triggerTimestamp).toISOString()}`);
+        }).catch(err => {
+            console.error("[MobileBridge] Schedule error:", err);
+            if (String(err).includes('not enabled') || String(err).includes('permission')) {
+                requestNotificationPermissions();
+            }
+        });
+
+        return;
+    }
+
+    // Web Fallback (Laptop/Browser)
+    console.log(`[MobileBridge] Web fallback. Delay: ${delayMs}ms, isImmediate: ${isImmediate}`);
     if (window.Notification && Notification.permission === "default") {
         Notification.requestPermission();
     }
 
-    // جدولة الإشعار على المتصفح باستخدام setTimeout
-    if (delayMs > 0) {
+    if (isImmediate) {
+        if (typeof playSound === 'function') {
+            playSound(soundBase === 'pomodoro' ? 'pomodoro' : 'success');
+        }
+        if (window.Notification && Notification.permission === "granted") {
+            new Notification(title, { body: body });
+        } else {
+            showToast(`${title}: ${body}`, 'info');
+        }
+    } else if (delayMs > 0) {
         setTimeout(() => {
-            // تشغيل الصوت المبرمج في utils.js بالتزامن مع الإشعار
             if (typeof playSound === 'function') {
-                playSound('success');
+                playSound(soundBase === 'pomodoro' ? 'pomodoro' : 'success');
             }
             if (window.Notification && Notification.permission === "granted") {
                 new Notification(title, { body: body });
             } else {
-                // لو المتصفح حاقب الإشعارات، اظهرها كـ alert عادي للتيست
-                alert(`[Notification] ${title}: ${body}`);
+                showToast(`${title}: ${body}`, 'info');
             }
         }, delayMs);
     }
@@ -918,41 +973,40 @@ function updateMobileTimerNotification(isWork, timeLeft) {
         const secs = timeLeft % 60;
         const timeStr = `${mins}:${String(secs).padStart(2, '0')} remaining`;
 
-        window.Capacitor.Plugins.LocalNotifications.createChannel({
-            id: 'flowtick-timer-live-v6',
-            name: 'FlowTick Live Timer',
-            importance: 2, // LOW - silent countdown
-            visibility: 1
-        }).then(() => {
-            window.Capacitor.Plugins.LocalNotifications.schedule({
-                notifications: [{
-                    id: 888888,
-                    title: isWork ? '🍅 Focus Session Active' : '☕ Break Session Active',
-                    body: timeStr,
-                    schedule: { at: new Date(Date.now() + 50) },
-                    channelId: 'flowtick-timer-live-v6',
-                    ongoing: true,
-                    autoCancel: false,
-                    foreground: true
-                }]
-            });
+        window.Capacitor.Plugins.LocalNotifications.schedule({
+            notifications: [{
+                id: 888888,
+                title: isWork ? '🍅 Focus Session Active' : '☕ Break Session Active',
+                body: timeStr,
+                channelId: 'flowtick-timer-live-v6',
+                ongoing: true,
+                autoCancel: false
+            }]
+        }).catch(err => {
+            console.warn('[LiveTimer] Update notification error:', err);
         });
     }
 }
 
 function cancelMobileNotification(id) {
+    let notifId = parseInt(id, 10);
+    if (isNaN(notifId)) {
+        notifId = Math.abs(String(id).split("").reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0));
+    }
+    notifId = (Math.abs(notifId) % 2000000000) + 1;
+
     if (window.AndroidBridge && typeof window.AndroidBridge.cancelNotification === 'function') {
-        window.AndroidBridge.cancelNotification(String(id));
+        window.AndroidBridge.cancelNotification(String(notifId));
         return;
     }
     if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
         window.Capacitor.Plugins.LocalNotifications.cancel({
-            notifications: [{ id: Math.abs(parseInt(id)) || 0 }]
-        });
+            notifications: [{ id: notifId }]
+        }).catch(err => console.warn('[MobileBridge] Cancel error:', err));
         return;
     }
     if (window.cordova && window.cordova.plugins && window.cordova.plugins.notification && window.cordova.plugins.notification.local) {
-        window.cordova.plugins.notification.local.cancel(Math.abs(parseInt(id)) || 0);
+        window.cordova.plugins.notification.local.cancel(notifId);
         return;
     }
 }
@@ -965,17 +1019,13 @@ window.cancelMobileNotification = cancelMobileNotification;
 function scheduleItemNotifications(item) {
     if (!item) return;
 
-    // توليد IDs رقمية فريدة ونظيفة
+    // Generate clean unique numeric IDs
     const numericId = getStableNumericId(item.id);
-    // لضمان أن الـ Due ID رقمي تماماً ولا يحتوي على نصوص تسبب NaN
     const dueNumericId = getStableNumericId(item.id) + 999999; 
 
-    // إلغاء الإشعارات القديمة لمنع التكرار
-    if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.LocalNotifications) {
-        window.Capacitor.Plugins.LocalNotifications.cancel({
-            notifications: [{ id: numericId }, { id: dueNumericId }]
-        });
-    }
+    // Cancel old notifications to prevent duplicates
+    cancelMobileNotification(numericId);
+    cancelMobileNotification(dueNumericId);
 
     if (item.isCancelled || item.isDeleted) return;
 
@@ -1011,7 +1061,6 @@ function scheduleItemNotifications(item) {
                 notifBody = `Time for your habit: ${item.title}`;
             }
 
-            // جدولة التكرار القادم فوراً (مرة واحدة فقط وبشكل صحيح)
             scheduleMobileNotification(
                 numericId,
                 notifTitle,
@@ -1023,7 +1072,7 @@ function scheduleItemNotifications(item) {
         }
     }
 
-    // جدولة الـ Deadline (Due Date) لو موجود
+    // Schedule Deadline (Due Date) if defined
     if (item.dueDate && item.dueTime) {
         const triggerTime = parseLocalISOString(item.dueDate, item.dueTime);
         if (triggerTime && triggerTime > new Date()) {
@@ -4678,6 +4727,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setDashboardLayout(initialLayout);
     initSettings();
     initMissedNotificationsUI();
+    requestNotificationPermissions();
     requestBatteryOptimization();
 
     // Every 60 s, re-sort the already-loaded task list so tasks move between

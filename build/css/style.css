@@ -2745,26 +2745,37 @@ body.dark-theme .fc-theme-standard .fc-day-today {
 }
 .note-card-actions {
     display: flex;
-    gap: 4px;
+    gap: 6px;
     align-items: center;
 }
 .note-card-actions .btn-icon {
-    padding: 4px 6px;
-    font-size: 13px;
-    border-radius: 6px;
+    width: 32px;
+    height: 32px;
+    font-size: 13.5px;
+    border-radius: 8px;
     color: var(--text-muted);
-    background: transparent;
-    border: none;
+    background: var(--bg-notion-sidebar, rgba(0,0,0,0.03));
+    border: 1px solid var(--border-color);
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.18s ease;
 }
 .note-card-actions .btn-icon:hover {
     color: var(--text-main);
-    background: rgba(0,0,0,0.05);
+    background: var(--card-bg, #ffffff);
+    border-color: var(--text-muted);
+    transform: scale(1.05);
 }
 .note-pin-toggle.active {
+    background: rgba(255, 169, 64, 0.15) !important;
+    border-color: #FFA940 !important;
     color: #FFA940 !important;
 }
 .note-delete-btn:hover {
+    background: rgba(255, 77, 79, 0.12) !important;
+    border-color: #FF4D4F !important;
     color: #FF4D4F !important;
 }
 .note-card-title {
@@ -2858,6 +2869,38 @@ body.dark-theme .fc-theme-standard .fc-day-today {
     display: flex;
     align-items: center;
     gap: 10px;
+}
+.note-editor-action-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--item-bg);
+    color: var(--text-muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all 0.18s ease;
+}
+.note-editor-action-btn:hover {
+    border-color: var(--color-ticktick-blue);
+    color: var(--color-ticktick-blue);
+    transform: scale(1.05);
+}
+.note-editor-action-btn.active, #note-pin-btn.active {
+    background: rgba(255, 169, 64, 0.15) !important;
+    border-color: #FFA940 !important;
+    color: #FFA940 !important;
+}
+.note-editor-action-btn.delete-btn, #delete-note-btn {
+    color: #FF4D4F !important;
+}
+.note-editor-action-btn.delete-btn:hover, #delete-note-btn:hover {
+    background: rgba(255, 77, 79, 0.15) !important;
+    border-color: #FF4D4F !important;
+    color: #FF4D4F !important;
 }
 .note-save-status {
     font-size: 12px;

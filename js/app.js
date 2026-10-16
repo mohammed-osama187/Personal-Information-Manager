@@ -1,7 +1,6 @@
 import { initAuth } from './auth.js';
 import { initMissedNotificationsUI, requestNotificationPermissions } from './notifications.js';
 import {
-    initCustomSelect,
     initCustomTimePicker,
     displayTasks,
     initModalLogic,
@@ -12,7 +11,7 @@ import {
 import { initPomodoroDrag } from './timer.js';
 import { initCalendar } from './calendar.js';
 import { syncOfflineQueue } from './db.js';
-import { parseLocalISOString, applyThemePreference, showToast } from './utils.js';
+import { parseLocalISOString, applyThemePreference, showToast, initCustomSelect } from './utils.js';
 import { initNotesUI } from './notes.js';
 import { initAppUpdates } from './updates.js';
 

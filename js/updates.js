@@ -12,7 +12,7 @@ export function initAppUpdates() {
     const webDownloadElements = document.querySelectorAll('.web-only-download');
     if (!isNative) {
         webDownloadElements.forEach(el => {
-            el.style.display = '';
+            el.style.display = 'block';
         });
         // Set dynamic download link
         const sidebarLink = document.getElementById('sidebar-download-link');
@@ -29,7 +29,7 @@ export function initAppUpdates() {
     const appUpdateCards = document.querySelectorAll('.app-only-update');
     if (isNative) {
         appUpdateCards.forEach(el => {
-            el.style.display = '';
+            el.style.display = 'block';
         });
         updateSettingsVersionDisplay();
     } else {

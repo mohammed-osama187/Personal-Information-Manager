@@ -2335,6 +2335,11 @@ function initNotesUI() {
     if (deleteNoteBtn) {
         deleteNoteBtn.addEventListener('click', () => {
             if (!activeNoteId) {
+                const titleVal = titleInput ? titleInput.value.trim() : '';
+                const bodyVal = editorBody ? editorBody.innerText.trim() : '';
+                if (titleVal || bodyVal) {
+                    showToast('Draft discarded', 'info', false);
+                }
                 closeNoteEditor();
                 return;
             }
@@ -2691,6 +2696,7 @@ async function togglePinNote(noteId) {
     if (note) {
         note.isPinned = !note.isPinned;
         await saveNoteToFirebase(note);
+        showToast(note.isPinned ? 'Note pinned' : 'Note unpinned', 'info', false);
         renderNotesList();
     }
 }
@@ -2735,6 +2741,7 @@ window.openNoteEditor = openNoteEditor;
 window.closeNoteEditor = closeNoteEditor;
 window.togglePinNote = togglePinNote;
 window.confirmDeleteNote = confirmDeleteNote;
+window.deleteNote = deleteNote;
 
 
 /* ===== js/updates.js ===== */
@@ -2750,7 +2757,7 @@ function initAppUpdates() {
     const webDownloadElements = document.querySelectorAll('.web-only-download');
     if (!isNative) {
         webDownloadElements.forEach(el => {
-            el.style.display = '';
+            el.style.display = 'block';
         });
         // Set dynamic download link
         const sidebarLink = document.getElementById('sidebar-download-link');
@@ -2767,7 +2774,7 @@ function initAppUpdates() {
     const appUpdateCards = document.querySelectorAll('.app-only-update');
     if (isNative) {
         appUpdateCards.forEach(el => {
-            el.style.display = '';
+            el.style.display = 'block';
         });
         updateSettingsVersionDisplay();
     } else {
@@ -2934,10 +2941,6 @@ let _detailsKebabCloseHandler = null;
 let settingsInitialized = false;
 
 
-// Delegate to custom select dropdown helper from utils.js
-function initCustomSelect(...args) {
-    return window.initCustomSelect ? window.initCustomSelect(...args) : null;
-}
 
 // ==========================================
 // Custom 12h Time Picker component helper

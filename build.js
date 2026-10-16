@@ -73,7 +73,7 @@ function stripExports(code) {
     return code
         .replace(/^export\s+(async\s+function|function|class|const|let|var)\b/gm, '$1')
         .replace(/^export\s+default\s+/gm, '')
-        .replace(/^export\s*\{[^}]*\};\s*[\r\n]?/gm, '');
+        .replace(/^export\s*\{[^}]*\}\s*(?:from\s*['"][^'"]+['"])?;\s*[\r\n]?/gm, '');
 }
 
 // Replace  import('./x.js').then(m => { m.func() })

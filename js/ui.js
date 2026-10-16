@@ -27,8 +27,10 @@ let _detailsKebabCloseHandler = null;
 let settingsInitialized = false;
 
 
-// Re-export custom select dropdown helper from utils.js
-export { initCustomSelect } from './utils.js';
+// Delegate to custom select dropdown helper from utils.js
+export function initCustomSelect(...args) {
+    return window.initCustomSelect ? window.initCustomSelect(...args) : null;
+}
 
 // ==========================================
 // Custom 12h Time Picker component helper

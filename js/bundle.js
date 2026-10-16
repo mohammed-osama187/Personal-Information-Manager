@@ -2624,21 +2624,45 @@ async function openNoteEditor(noteId) {
 
     updateWordCount();
     modal.classList.add('active');
+
+    // Push state for mobile Android back gesture & browser back button
+    try {
+        if (!window.history.state || window.history.state.modal !== 'note-editor') {
+            window.history.pushState({ modal: 'note-editor' }, '');
+        }
+    } catch (e) {
+        console.warn('Could not push history state for note editor', e);
+    }
+
     setTimeout(() => {
         if (!titleInput.value) titleInput.focus();
         else editorBody.focus();
     }, 150);
 }
 
-function closeNoteEditor() {
+function closeNoteEditor(fromHistory = false) {
     if (autoSaveTimeout) {
         clearTimeout(autoSaveTimeout);
         autoSaveTimeout = null;
     }
+    // Auto-save changes if any before closing
+    saveCurrentNote(false);
+
     const modal = document.getElementById('note-editor-modal');
     if (modal) modal.classList.remove('active');
     activeNoteId = null;
     renderNotesList();
+
+    // If closed via button/gesture click (not popstate) and history has the note-editor state, go back cleanly
+    if (!fromHistory) {
+        try {
+            if (window.history.state && window.history.state.modal === 'note-editor') {
+                window.history.back();
+            }
+        } catch (e) {
+            console.warn('Could not pop history state for note editor', e);
+        }
+    }
 }
 
 async function saveCurrentNote(showFeedback = false) {
@@ -2779,6 +2803,45 @@ async function downloadApk(url = DEFAULT_DOWNLOAD_URL) {
 }
 window.downloadApk = downloadApk;
 
+async function updateDownloadLinks() {
+    const downloadBtn = document.getElementById('apk-download-btn') || document.getElementById('settings-download-link');
+    const sidebarBtn = document.getElementById('sidebar-download-link');
+    if (!downloadBtn && !sidebarBtn) return;
+
+    try {
+        const response = await fetch('./version.json?cache_bust=' + Date.now());
+        if (response.ok) {
+            const data = await response.json();
+            const versionName = data.versionName || '1.0.0';
+
+            // Keep the direct static file URL
+            if (downloadBtn) {
+                downloadBtn.href = './FlowTick.apk';
+                downloadBtn.setAttribute('download', `FlowTick-v${versionName}.apk`);
+            }
+            if (sidebarBtn) {
+                sidebarBtn.href = './FlowTick.apk';
+                sidebarBtn.setAttribute('download', `FlowTick-v${versionName}.apk`);
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load version details:', error);
+        if (downloadBtn) {
+            downloadBtn.href = './FlowTick.apk';
+            downloadBtn.setAttribute('download', 'FlowTick.apk');
+        }
+        if (sidebarBtn) {
+            sidebarBtn.href = './FlowTick.apk';
+            sidebarBtn.setAttribute('download', 'FlowTick.apk');
+        }
+    }
+}
+
+// Fetch the Version Dynamically on DOMContentLoaded
+document.addEventListener('DOMContentLoaded', async () => {
+    await updateDownloadLinks();
+});
+
 function initAppUpdates() {
     const isNative = isNativePlatform();
 
@@ -2788,30 +2851,12 @@ function initAppUpdates() {
         webDownloadElements.forEach(el => {
             el.style.display = 'block';
         });
-        // Set dynamic download link
-        const sidebarLink = document.getElementById('sidebar-download-link');
-        const settingsLink = document.getElementById('settings-download-link');
-        if (sidebarLink) sidebarLink.href = DEFAULT_DOWNLOAD_URL;
-        if (settingsLink) settingsLink.href = DEFAULT_DOWNLOAD_URL;
+        updateDownloadLinks();
     } else {
         webDownloadElements.forEach(el => {
             el.style.display = 'none';
         });
     }
-
-    // Intercept click on download links to prevent default WebView navigation
-    const interceptDownloadLink = (linkId) => {
-        const linkEl = document.getElementById(linkId);
-        if (linkEl) {
-            linkEl.addEventListener('click', async (event) => {
-                event.preventDefault();
-                const apkUrl = (linkEl.href && !linkEl.href.endsWith('#')) ? linkEl.href : DEFAULT_DOWNLOAD_URL;
-                await downloadApk(apkUrl);
-            });
-        }
-    };
-    interceptDownloadLink('sidebar-download-link');
-    interceptDownloadLink('settings-download-link');
 
     // 2. App-only Update Check visibility (shown only in mobile app, hidden on website)
     const appUpdateCards = document.querySelectorAll('.app-only-update');
@@ -5848,7 +5893,18 @@ function handleAppBackButton() {
         return;
     }
 
-    // 2. Close sidebar overlay if active
+    // 2. If Note Editor modal is open, close it cleanly (auto-saves & returns to notes list, prevents closing app)
+    const noteModal = document.getElementById('note-editor-modal');
+    if (noteModal && noteModal.classList.contains('active')) {
+        if (typeof window.closeNoteEditor === 'function') {
+            window.closeNoteEditor();
+        } else {
+            noteModal.classList.remove('active');
+        }
+        return;
+    }
+
+    // 3. Close sidebar overlay if active
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebar-overlay');
     if (sidebar && sidebar.classList.contains('active')) {
@@ -5857,7 +5913,7 @@ function handleAppBackButton() {
         return;
     }
 
-    // 3. Close active modals
+    // 4. Close active modals
     const activeModals = document.querySelectorAll('.modal.active');
     if (activeModals.length > 0) {
         activeModals.forEach(modal => modal.classList.remove('active'));
@@ -5917,6 +5973,25 @@ function initBackButtonHandler() {
             }
         }, 150);
     }
+
+    // Listen for browser back navigation / Android system gesture in web browsers
+    window.addEventListener('popstate', (e) => {
+        const noteModal = document.getElementById('note-editor-modal');
+        if (noteModal && noteModal.classList.contains('active')) {
+            if (typeof window.closeNoteEditor === 'function') {
+                window.closeNoteEditor(true);
+            } else {
+                noteModal.classList.remove('active');
+            }
+            return;
+        }
+
+        const activeModals = document.querySelectorAll('.modal.active');
+        if (activeModals.length > 0) {
+            activeModals.forEach(m => m.classList.remove('active'));
+            return;
+        }
+    });
 }
 
 async function requestBatteryOptimization() {

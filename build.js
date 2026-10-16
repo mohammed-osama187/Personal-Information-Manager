@@ -7,7 +7,7 @@ const destDir = path.join(__dirname, 'build');
 if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
 
 // ── Static assets to copy ────────────────────────────────────────────────────
-const filesToCopy = ['index.html', 'manifest.json', 'sw.js', 'logo.png', 'logo1.png', 'version.json'];
+const filesToCopy = ['index.html', 'manifest.json', 'sw.js', 'logo.png', 'logo1.png', 'version.json', 'FlowTick.apk'];
 const dirsToCopy  = ['css', 'sounds', 'assets'];
 
 console.log('Building web assets...');

@@ -36,6 +36,45 @@ export async function downloadApk(url = DEFAULT_DOWNLOAD_URL) {
 }
 window.downloadApk = downloadApk;
 
+export async function updateDownloadLinks() {
+    const downloadBtn = document.getElementById('apk-download-btn') || document.getElementById('settings-download-link');
+    const sidebarBtn = document.getElementById('sidebar-download-link');
+    if (!downloadBtn && !sidebarBtn) return;
+
+    try {
+        const response = await fetch('./version.json?cache_bust=' + Date.now());
+        if (response.ok) {
+            const data = await response.json();
+            const versionName = data.versionName || '1.0.0';
+
+            // Keep the direct static file URL
+            if (downloadBtn) {
+                downloadBtn.href = './FlowTick.apk';
+                downloadBtn.setAttribute('download', `FlowTick-v${versionName}.apk`);
+            }
+            if (sidebarBtn) {
+                sidebarBtn.href = './FlowTick.apk';
+                sidebarBtn.setAttribute('download', `FlowTick-v${versionName}.apk`);
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load version details:', error);
+        if (downloadBtn) {
+            downloadBtn.href = './FlowTick.apk';
+            downloadBtn.setAttribute('download', 'FlowTick.apk');
+        }
+        if (sidebarBtn) {
+            sidebarBtn.href = './FlowTick.apk';
+            sidebarBtn.setAttribute('download', 'FlowTick.apk');
+        }
+    }
+}
+
+// Fetch the Version Dynamically on DOMContentLoaded
+document.addEventListener('DOMContentLoaded', async () => {
+    await updateDownloadLinks();
+});
+
 export function initAppUpdates() {
     const isNative = isNativePlatform();
 
@@ -45,30 +84,12 @@ export function initAppUpdates() {
         webDownloadElements.forEach(el => {
             el.style.display = 'block';
         });
-        // Set dynamic download link
-        const sidebarLink = document.getElementById('sidebar-download-link');
-        const settingsLink = document.getElementById('settings-download-link');
-        if (sidebarLink) sidebarLink.href = DEFAULT_DOWNLOAD_URL;
-        if (settingsLink) settingsLink.href = DEFAULT_DOWNLOAD_URL;
+        updateDownloadLinks();
     } else {
         webDownloadElements.forEach(el => {
             el.style.display = 'none';
         });
     }
-
-    // Intercept click on download links to prevent default WebView navigation
-    const interceptDownloadLink = (linkId) => {
-        const linkEl = document.getElementById(linkId);
-        if (linkEl) {
-            linkEl.addEventListener('click', async (event) => {
-                event.preventDefault();
-                const apkUrl = (linkEl.href && !linkEl.href.endsWith('#')) ? linkEl.href : DEFAULT_DOWNLOAD_URL;
-                await downloadApk(apkUrl);
-            });
-        }
-    };
-    interceptDownloadLink('sidebar-download-link');
-    interceptDownloadLink('settings-download-link');
 
     // 2. App-only Update Check visibility (shown only in mobile app, hidden on website)
     const appUpdateCards = document.querySelectorAll('.app-only-update');

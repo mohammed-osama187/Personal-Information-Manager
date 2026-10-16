@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK & Deploy Pages
 
 on:
   push:
@@ -7,14 +7,23 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build APK
+  build-and-deploy:
+    name: Build APK & Deploy Pages
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Checkout Code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -25,11 +34,9 @@ jobs:
       - name: Install NPM Dependencies
         run: npm install
 
-      - name: Prepare Web Assets for Capacitor
-        run: |
-          mkdir -p build
-          rsync -av --exclude='build' --exclude='android' --exclude='node_modules' --exclude='.git' --exclude='.github' ./ build/
-      
+      - name: Build Web Bundle
+        run: node build.js
+
       - name: Sync Capacitor
         run: npx cap sync android
 
@@ -39,32 +46,37 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      - name: Build Debug APK
+      - name: Build Android APK
         working-directory: ./android
         run: |
           chmod +x ./gradlew
           ./gradlew assembleDebug
 
-      - name: Upload APK for Download
-        uses: actions/upload-artifact@v4
-        with:
-          name: FlowTick-V2
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-      # 1. استخراج رقم الإصدار وتجهيز نسختي الـ APK
+      - name: Bundle APK into Web Directory
+        run: |
+          # 1. Locate the compiled APK file
+          APK_PATH=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
+
+          # 2. Copy the APK into your web root directory as FlowTick.apk
+          cp "$APK_PATH" ./FlowTick.apk
+          cp "$APK_PATH" ./build/FlowTick.apk
+
+          echo "APK successfully bundled into web root."
+
       - name: Prepare APKs with Versioning
         run: |
-          # استخراج قيمة versionName من ملف build.gradle
           VERSION_NAME=$(grep "versionName" android/app/build.gradle | awk -F '"' '{print $2}')
           echo "APP_VERSION=$VERSION_NAME" >> $GITHUB_ENV
-          
-          # العثور على ملف الـ APK الناتج عن البناء
           APK_PATH=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
-          
-          # إنشاء نسختين من الملف
           cp "$APK_PATH" "FlowTick-v${VERSION_NAME}.apk"
           cp "$APK_PATH" "FlowTick-latest.apk"
-  
-      # 2. إنشاء الـ GitHub Release ورفع الملفين
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlowTick-APK
+          path: FlowTick.apk
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -77,3 +89,12 @@ jobs:
             FlowTick-latest.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.' # Point to your web root folder containing index.html and FlowTick.apk
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

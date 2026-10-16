@@ -341,21 +341,45 @@ export async function openNoteEditor(noteId) {
 
     updateWordCount();
     modal.classList.add('active');
+
+    // Push state for mobile Android back gesture & browser back button
+    try {
+        if (!window.history.state || window.history.state.modal !== 'note-editor') {
+            window.history.pushState({ modal: 'note-editor' }, '');
+        }
+    } catch (e) {
+        console.warn('Could not push history state for note editor', e);
+    }
+
     setTimeout(() => {
         if (!titleInput.value) titleInput.focus();
         else editorBody.focus();
     }, 150);
 }
 
-export function closeNoteEditor() {
+export function closeNoteEditor(fromHistory = false) {
     if (autoSaveTimeout) {
         clearTimeout(autoSaveTimeout);
         autoSaveTimeout = null;
     }
+    // Auto-save changes if any before closing
+    saveCurrentNote(false);
+
     const modal = document.getElementById('note-editor-modal');
     if (modal) modal.classList.remove('active');
     activeNoteId = null;
     renderNotesList();
+
+    // If closed via button/gesture click (not popstate) and history has the note-editor state, go back cleanly
+    if (!fromHistory) {
+        try {
+            if (window.history.state && window.history.state.modal === 'note-editor') {
+                window.history.back();
+            }
+        } catch (e) {
+            console.warn('Could not pop history state for note editor', e);
+        }
+    }
 }
 
 export async function saveCurrentNote(showFeedback = false) {

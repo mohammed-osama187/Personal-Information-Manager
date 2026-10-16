@@ -140,8 +140,8 @@
                         <div class="download-desc">Get the Mobile App</div>
                     </div>
                     <a id="sidebar-download-link"
-                        href="https://github.com/mohammed-osama187/Personal-Information-Manager/releases/latest/download/FlowTick-latest.apk"
-                        target="_blank" rel="noopener noreferrer" class="download-action-btn" title="Download APK">
+                        href="./FlowTick.apk" download="FlowTick.apk"
+                        class="download-action-btn" title="Download APK">
                         <i class="fa-solid fa-download"></i>
                     </a>
                 </div>
@@ -566,11 +566,10 @@
                                     file to install FlowTick on your Android device.</p>
                             </div>
                         </div>
-                        <a id="settings-download-link"
-                            href="https://github.com/mohammed-osama187/Personal-Information-Manager/releases/latest/download/FlowTick-latest.apk"
-                            target="_blank" rel="noopener noreferrer" class="btn btn-primary"
+                        <a id="apk-download-btn"
+                            href="./FlowTick.apk" download="FlowTick.apk" class="btn btn-primary download-btn"
                             style="background-color: #52C41A; border-color: #52C41A; text-decoration: none; display: inline-flex; align-items: center; gap: 8px;">
-                            <i class="fa-solid fa-download"></i> Download APK
+                            <i class="fa-solid fa-download"></i> Download Android App (APK)
                         </a>
                     </div>
                 </div>
@@ -609,7 +608,7 @@
                                 style="font-size: 24px; font-weight: 700; color: var(--text-main); margin-bottom: 4px; letter-spacing: -0.5px;">
                                 FlowTick</h2>
                             <p style="font-size: 13.5px; color: var(--color-ticktick-blue); font-weight: 600;">Personal
-                                Information Manager • v2.1</p>
+                                Information Manager</p>
                         </div>
                     </div>
 
@@ -621,7 +620,7 @@
                         <p style="color: var(--text-muted); font-size: 14px;">
                             FlowTick is a next-generation Personal Information Manager designed to seamlessly organize
                             your life. By combining advanced task scheduling, habit building, calendar synchronization,
-                            productivity statistics, and focus-boosting Pomodoro timers into a single unified space,
+                            rich formatted notes, productivity statistics, and focus-boosting Pomodoro timers into a single unified space,
                             FlowTick empowers you to stay in flow, track progress, and accomplish more every single day.
                         </p>
                     </div>
@@ -632,35 +631,54 @@
                             <i class="fa-solid fa-star" style="color: #FFA940;"></i> Key Features
                         </h3>
                         <div
-                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+                            style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
                             <div
                                 style="padding: 16px; border-radius: 16px; background: var(--bg-notion-sidebar); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 6px;">
                                 <span style="font-weight: 600; color: var(--text-main); font-size: 13.5px;"><i
-                                        class="fa-solid fa-list-check" style="color: #73D13D;"></i> Smart Tasks</span>
-                                <span style="font-size: 12px; color: var(--text-muted);">Standard lists & Kanban boards
-                                    for flexible scheduling.</span>
+                                        class="fa-solid fa-list-check" style="color: #73D13D;"></i> Smart Tasks & Kanban</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">Standard lists, Kanban boards, priorities, and category tags with instant filtering.</span>
                             </div>
                             <div
                                 style="padding: 16px; border-radius: 16px; background: var(--bg-notion-sidebar); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 6px;">
                                 <span style="font-weight: 600; color: var(--text-main); font-size: 13.5px;"><i
-                                        class="fa-solid fa-rotate" style="color: #FFA940;"></i> Habit Tracker</span>
-                                <span style="font-size: 12px; color: var(--text-muted);">Dynamic grid loops to build
-                                    consistent streaks.</span>
+                                        class="fa-solid fa-hand-pointer" style="color: #13C2C2;"></i> Swipe Gestures</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">Natural mobile gestures: slide right to complete, slide left to mark won't do.</span>
                             </div>
                             <div
                                 style="padding: 16px; border-radius: 16px; background: var(--bg-notion-sidebar); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 6px;">
                                 <span style="font-weight: 600; color: var(--text-main); font-size: 13.5px;"><i
-                                        class="fa-solid fa-stopwatch" style="color: var(--color-ticktick-blue);"></i>
-                                    Pomodoro</span>
-                                <span style="font-size: 12px; color: var(--text-muted);">Interactive timers to
-                                    supercharge focus sessions.</span>
+                                        class="fa-solid fa-note-sticky" style="color: #722ED1;"></i> Rich Formatted Notes</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">Document editor with headings, formatting toolbar, lists, blockquotes, auto-save, and pinning.</span>
                             </div>
                             <div
                                 style="padding: 16px; border-radius: 16px; background: var(--bg-notion-sidebar); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 6px;">
                                 <span style="font-weight: 600; color: var(--text-main); font-size: 13.5px;"><i
-                                        class="fa-solid fa-chart-pie" style="color: #FF4D4F;"></i> Rich Stats</span>
-                                <span style="font-size: 12px; color: var(--text-muted);">Visual statistics to track
-                                    completion rates.</span>
+                                        class="fa-solid fa-rotate" style="color: #FFA940;"></i> Habit Tracker & Timers</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">Streak loops with multiple daily targets and custom reminder notifications.</span>
+                            </div>
+                            <div
+                                style="padding: 16px; border-radius: 16px; background: var(--bg-notion-sidebar); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 6px;">
+                                <span style="font-weight: 600; color: var(--text-main); font-size: 13.5px;"><i
+                                        class="fa-regular fa-calendar-days" style="color: #2F7BF6;"></i> Interactive Calendar</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">Day, week, and month views with schedule synchronization and accurate duration bars.</span>
+                            </div>
+                            <div
+                                style="padding: 16px; border-radius: 16px; background: var(--bg-notion-sidebar); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 6px;">
+                                <span style="font-weight: 600; color: var(--text-main); font-size: 13.5px;"><i
+                                        class="fa-solid fa-stopwatch" style="color: var(--color-ticktick-blue);"></i> Pomodoro Focus</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">Circular timer with custom work/break intervals, audio alarms, and persistent status.</span>
+                            </div>
+                            <div
+                                style="padding: 16px; border-radius: 16px; background: var(--bg-notion-sidebar); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 6px;">
+                                <span style="font-weight: 600; color: var(--text-main); font-size: 13.5px;"><i
+                                        class="fa-solid fa-chart-pie" style="color: #FF4D4F;"></i> Productivity Analytics</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">Visual statistics tracking task completion velocity, streaks, and focus metrics.</span>
+                            </div>
+                            <div
+                                style="padding: 16px; border-radius: 16px; background: var(--bg-notion-sidebar); border: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 6px;">
+                                <span style="font-weight: 600; color: var(--text-main); font-size: 13.5px;"><i
+                                        class="fa-solid fa-cloud" style="color: #52C41A;"></i> Cloud Sync & Offline</span>
+                                <span style="font-size: 12px; color: var(--text-muted);">Real-time Firestore synchronization with offline persistence and direct Android APK installation.</span>
                             </div>
                         </div>
                     </div>

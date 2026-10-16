@@ -131,7 +131,18 @@ function handleAppBackButton() {
         return;
     }
 
-    // 2. Close sidebar overlay if active
+    // 2. If Note Editor modal is open, close it cleanly (auto-saves & returns to notes list, prevents closing app)
+    const noteModal = document.getElementById('note-editor-modal');
+    if (noteModal && noteModal.classList.contains('active')) {
+        if (typeof window.closeNoteEditor === 'function') {
+            window.closeNoteEditor();
+        } else {
+            noteModal.classList.remove('active');
+        }
+        return;
+    }
+
+    // 3. Close sidebar overlay if active
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebar-overlay');
     if (sidebar && sidebar.classList.contains('active')) {
@@ -140,7 +151,7 @@ function handleAppBackButton() {
         return;
     }
 
-    // 3. Close active modals
+    // 4. Close active modals
     const activeModals = document.querySelectorAll('.modal.active');
     if (activeModals.length > 0) {
         activeModals.forEach(modal => modal.classList.remove('active'));
@@ -200,6 +211,25 @@ function initBackButtonHandler() {
             }
         }, 150);
     }
+
+    // Listen for browser back navigation / Android system gesture in web browsers
+    window.addEventListener('popstate', (e) => {
+        const noteModal = document.getElementById('note-editor-modal');
+        if (noteModal && noteModal.classList.contains('active')) {
+            if (typeof window.closeNoteEditor === 'function') {
+                window.closeNoteEditor(true);
+            } else {
+                noteModal.classList.remove('active');
+            }
+            return;
+        }
+
+        const activeModals = document.querySelectorAll('.modal.active');
+        if (activeModals.length > 0) {
+            activeModals.forEach(m => m.classList.remove('active'));
+            return;
+        }
+    });
 }
 
 async function requestBatteryOptimization() {

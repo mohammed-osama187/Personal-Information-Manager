@@ -1,17 +1,21 @@
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { App } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
 import { showToast } from './utils.js';
 
+const UPDATE_METADATA_URL = 'https://mohammed-osama187.github.io/Personal-Information-Manager/version.json';
 const GITHUB_REPO_OWNER = 'mohammed-osama187';
 const GITHUB_REPO_NAME = 'Personal-Information-Manager';
-const DEFAULT_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/releases/latest/download/FlowTick-latest.apk`;
-const REMOTE_VERSION_URL = `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/main/version.json`;
+const DEFAULT_DOWNLOAD_URL = 'https://mohammed-osama187.github.io/Personal-Information-Manager/FlowTick.apk';
+
+const getFilesystem = () => (typeof Filesystem !== 'undefined' ? Filesystem : (window.Capacitor?.Plugins?.Filesystem || null));
+const getApp = () => (typeof App !== 'undefined' ? App : (window.Capacitor?.Plugins?.App || null));
+const DirectoryCache = (typeof Directory !== 'undefined' && Directory.Cache) ? Directory.Cache : 'CACHE';
 
 export async function downloadApk(url = DEFAULT_DOWNLOAD_URL) {
     const isNative = isNativePlatform();
     if (isNative) {
-        // Escapes the internal WebView and forces Android's default browser (e.g., Chrome)
-        // to handle the download, triggering the native DownloadManager properly.
         try {
             if (typeof Browser !== 'undefined' && Browser.open) {
                 await Browser.open({
@@ -35,6 +39,63 @@ export async function downloadApk(url = DEFAULT_DOWNLOAD_URL) {
     window.open(url, '_blank');
 }
 window.downloadApk = downloadApk;
+
+export async function startDirectDownloadAndInstall(apkUrl, versionName) {
+    const isNative = isNativePlatform();
+    if (!isNative) {
+        window.open(apkUrl || DEFAULT_DOWNLOAD_URL, '_blank');
+        return;
+    }
+
+    const confirmBtn = document.getElementById('update-confirm-btn');
+    try {
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+            confirmBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Downloading...';
+        }
+        showToast('Downloading update... Please wait.', 'info');
+
+        const fileName = `FlowTick-v${versionName || 'latest'}.apk`;
+        const fs = getFilesystem();
+
+        if (fs && typeof fs.downloadFile === 'function') {
+            // 1. Download file directly into app storage without browser redirects
+            await fs.downloadFile({
+                url: apkUrl || DEFAULT_DOWNLOAD_URL,
+                path: fileName,
+                directory: DirectoryCache
+            });
+
+            showToast('Download complete. Launching installer...', 'success');
+
+            // 2. Open the downloaded APK with Android Package Installer
+            if (window.Capacitor?.Plugins?.AppInstaller) {
+                await window.Capacitor.Plugins.AppInstaller.installApk({ fileName });
+            } else if (typeof fs.getUri === 'function') {
+                const uriResult = await fs.getUri({
+                    directory: DirectoryCache,
+                    path: fileName
+                });
+                window.location.href = uriResult.uri;
+            }
+        } else {
+            // Fallback to external browser if filesystem plugin isn't available
+            await downloadApk(apkUrl || DEFAULT_DOWNLOAD_URL);
+        }
+    } catch (error) {
+        console.error('In-app installation error:', error);
+        showToast('Failed to install update automatically: ' + error.message, 'error');
+        try {
+            await downloadApk(apkUrl || DEFAULT_DOWNLOAD_URL);
+        } catch (_) {}
+    } finally {
+        if (confirmBtn) {
+            confirmBtn.disabled = false;
+            confirmBtn.innerHTML = '<i class="fa-solid fa-cloud-arrow-down"></i> Update Now';
+        }
+    }
+}
+window.startDirectDownloadAndInstall = startDirectDownloadAndInstall;
 
 export async function updateDownloadLinks() {
     const downloadBtn = document.getElementById('apk-download-btn') || document.getElementById('settings-download-link');
@@ -235,12 +296,40 @@ export function showUpdateModal(latest) {
         confirmBtn.onclick = async (event) => {
             if (event) event.preventDefault();
             const downloadUrl = latest.downloadUrl || DEFAULT_DOWNLOAD_URL;
-            await downloadApk(downloadUrl);
             modal.classList.remove('active');
+            await startDirectDownloadAndInstall(downloadUrl, latest.versionName);
         };
     }
 
     modal.classList.add('active');
 }
 
+export async function checkForAppUpdate() {
+    if (!isNativePlatform()) return;
+
+    try {
+        const info = await getCurrentAppInfo();
+        const currentBuild = parseInt(info.versionCode, 10) || 1;
+
+        const response = await fetch(`${UPDATE_METADATA_URL}?t=${Date.now()}`);
+        if (!response.ok) return;
+
+        const remoteData = await response.json();
+        const remoteBuild = parseInt(remoteData.versionCode, 10) || 1;
+
+        if (remoteBuild > currentBuild) {
+            showUpdateModal(remoteData);
+        }
+    } catch (err) {
+        console.error('Update checking failed:', err);
+    }
+}
+
+// Run update check on app launch
+window.addEventListener('DOMContentLoaded', () => {
+    checkForAppUpdate();
+});
+
 window.checkAppUpdate = checkAppUpdate;
+window.checkForAppUpdate = checkForAppUpdate;
+window.startDirectDownloadAndInstall = startDirectDownloadAndInstall;

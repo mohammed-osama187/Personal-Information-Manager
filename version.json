@@ -1,6 +1,6 @@
 {
   "versionCode": 4,
   "versionName": "2.3.0",
-  "downloadUrl": "https://github.com/mohammed-osama187/Personal-Information-Manager/releases/latest/download/FlowTick-latest.apk",
+  "downloadUrl": "https://mohammed-osama187.github.io/Personal-Information-Manager/FlowTick.apk",
   "releaseNotes": "• FlowTick v2.3.0 Update\n• Mobile-first full-screen Notes page with flat icon save button\n• Android back button & gesture navigation fixes\n• Direct APK download from origin (fixes 100% stalling)\n• In-app update enhancements"
 }

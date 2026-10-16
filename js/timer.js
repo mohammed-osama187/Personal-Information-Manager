@@ -18,15 +18,16 @@ const cx = 120, cy = 120, r = 100;
 export function updateTimeDisplay() {
     const clockText = document.getElementById('timer-clock');
     const progressPath = document.getElementById('timer-progress');
-    const mins = Math.floor(timeLeft / 60).toString().padStart(2, '0');
-    const secs = (timeLeft % 60).toString().padStart(2, '0');
+    const safeTime = Math.max(0, timeLeft);
+    const mins = Math.floor(safeTime / 60).toString().padStart(2, '0');
+    const secs = (safeTime % 60).toString().padStart(2, '0');
     const newText = `${mins}:${secs}`;
     if (clockText && clockText.textContent !== newText) {
         clockText.textContent = newText;
     }
     if (isRunning && progressPath) {
         const totalSecs = (isWorkSession ? sessionMinutes : Math.round(sessionMinutes / 5)) * 60;
-        const ratio = timeLeft / totalSecs;
+        const ratio = Math.max(0, Math.min(1, safeTime / totalSecs));
         const newOffset = ARC_LENGTH - (ratio * ARC_LENGTH);
         if (progressPath.style.strokeDashoffset !== `${newOffset}`) {
             progressPath.style.strokeDashoffset = newOffset;
@@ -219,8 +220,14 @@ export function syncTimerWithTimePassed() {
                 if (progressPath) progressPath.style.stroke = 'var(--color-ticktick-blue)';
                 if (btnStart) btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Start';
                 if (knob) knob.style.display = 'block';
+                playSound('pomodoro');
                 showToast('Break over! Ready to focus?', 'info');
                 localStorage.removeItem('pomodoro_expected_end');
+
+                if (typeof cancelMobileNotification === 'function') {
+                    cancelMobileNotification(888888);
+                    cancelMobileNotification(999993);
+                }
 
                 if (typeof scheduleMobileNotification === 'function') {
                     scheduleMobileNotification(
@@ -232,7 +239,6 @@ export function syncTimerWithTimePassed() {
                         'pomodoro.mp3'
                     );
                 }
-                cancelAllPomodoroNotifications();
                 updateKnobByMinutes(sessionMinutes);
             }
         }

@@ -14,7 +14,8 @@ import {
     showToast, 
     showConfirm,
     getTodayStr,
-    applyThemePreference
+    applyThemePreference,
+    getCategoryMeta
 } from './utils.js';
 
 
@@ -546,6 +547,32 @@ export function removeTempSubtask(idx) {
 
 window.removeTempSubtask = removeTempSubtask;
 
+let tempHabitTimers = [];
+
+export function renderHabitTimersList() {
+    const listEl = document.getElementById('habit-timers-list');
+    if (!listEl) return;
+    if (tempHabitTimers.length === 0) {
+        listEl.innerHTML = '<span style="font-size: 12.5px; color: var(--text-muted); font-style: italic;">No specific timers added. Uses Start Time if set.</span>';
+        return;
+    }
+    listEl.innerHTML = tempHabitTimers.map((t, idx) => `
+        <div class="habit-timer-chip">
+            <i class="fa-regular fa-clock" style="font-size: 11px; color: var(--color-ticktick-blue);"></i>
+            <span>${formatTaskTimeDisplay(t)}</span>
+            <span class="habit-timer-chip-delete" onclick="removeHabitTimer(${idx})" title="Remove timer">
+                <i class="fa-solid fa-xmark"></i>
+            </span>
+        </div>
+    `).join('');
+}
+
+export function removeHabitTimer(idx) {
+    tempHabitTimers.splice(idx, 1);
+    renderHabitTimersList();
+}
+window.removeHabitTimer = removeHabitTimer;
+
 export function initModalLogic() {
     const modal = document.getElementById('task-modal');
     const openBtns = document.querySelectorAll('.open-modal-btn');
@@ -555,8 +582,30 @@ export function initModalLogic() {
     const modalDelBtn = document.getElementById('modal-delete-btn');
     const addSubBtn = document.getElementById('add-subtask-btn');
     const subInput = document.getElementById('subtask-input');
+    const habitAddTimerBtn = document.getElementById('habit-add-timer-btn');
+    const habitTimerInput = document.getElementById('habit-new-timer-input');
 
     if (!modal) return;
+
+    if (habitAddTimerBtn && habitTimerInput) {
+        habitAddTimerBtn.addEventListener('click', () => {
+            const val = habitTimerInput.value;
+            if (val) {
+                if (!tempHabitTimers.includes(val)) {
+                    tempHabitTimers.push(val);
+                    tempHabitTimers.sort();
+                    renderHabitTimersList();
+                }
+                habitTimerInput.value = '';
+            }
+        });
+        habitTimerInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                habitAddTimerBtn.click();
+            }
+        });
+    }
 
     if (addSubBtn && subInput) {
         addSubBtn.addEventListener('click', () => {
@@ -570,6 +619,19 @@ export function initModalLogic() {
             if (e.key === 'Enter') { e.preventDefault(); addSubBtn.click(); }
         });
     }
+
+    // Task category filter bar chips
+    const categoryChips = document.querySelectorAll('.btn-category-chip');
+    categoryChips.forEach(chip => {
+        chip.addEventListener('click', () => {
+            categoryChips.forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            window.currentCategoryFilter = chip.getAttribute('data-category') || 'all';
+            if (typeof window.sortAndRenderDashboard === 'function') {
+                window.sortAndRenderDashboard();
+            }
+        });
+    });
 
     openBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -586,6 +648,10 @@ export function initModalLogic() {
 
             if (window.customPrioritySelect) {
                 window.customPrioritySelect.setValue('medium', '<i class="fa-solid fa-flag" style="color: #FFA940;"></i> Medium');
+            }
+            if (window.customCategorySelect) {
+                const meta = getCategoryMeta('Work');
+                window.customCategorySelect.setValue('Work', `<span class="cat-dot" style="background:${meta.color};"></span> Work`);
             }
             if (window.customFrequencySelect) {
                 window.customFrequencySelect.setValue('none', 'No Repeat');
@@ -735,9 +801,15 @@ export function openModalUI(type) {
         eventOnlyElements.forEach(el => el.style.display = 'none');
         taskOnlyElements.forEach(el => el.style.display = 'none');
         
+        const habitOnlyElements = document.querySelectorAll('.id-habit-only');
+        habitOnlyElements.forEach(el => el.style.display = 'block');
+
         if (window.customFrequencySelect && window.customFrequencySelect.getValue() === 'none') {
             window.customFrequencySelect.setValue('daily', 'Daily');
         }
+    } else {
+        const habitOnlyElements = document.querySelectorAll('.id-habit-only');
+        habitOnlyElements.forEach(el => el.style.display = 'none');
     }
     modal.classList.add('active');
 }
@@ -805,7 +877,24 @@ export function editItem(id) {
             document.getElementById('times-per-day').value = item.timesPerDay || 1;
         }
 
+        if (item.type === 'habit') {
+            tempHabitTimers = Array.isArray(item.reminderTimes) && item.reminderTimes.length > 0
+                ? [...item.reminderTimes]
+                : (item.startTime ? [item.startTime] : []);
+            renderHabitTimersList();
+            const habitTimesInput = document.getElementById('habit-times-per-day');
+            if (habitTimesInput) habitTimesInput.value = item.timesPerDay || 1;
+        }
+
         if (item.type === 'task') {
+            const cat = item.category || 'Work';
+            const catInput = document.getElementById('task-category');
+            if (catInput) catInput.value = cat;
+            if (window.customCategorySelect) {
+                const meta = getCategoryMeta(cat);
+                window.customCategorySelect.setValue(cat, `<span class="cat-dot" style="background:${meta.color};"></span> ${meta.name}`);
+            }
+
             if (item.dueDate) document.getElementById('task-due-date').value = item.dueDate;
             if (window.timePickerDue) {
                 window.timePickerDue.setValue24h(item.dueTime || '');
@@ -924,6 +1013,7 @@ export function initFormSubmit(modal) {
             dataItem.dueDate = dueDate || null;
             dataItem.dueTime = dueTime || null;
             dataItem.priority = window.customPrioritySelect ? window.customPrioritySelect.getValue() : 'medium';
+            dataItem.category = window.customCategorySelect ? window.customCategorySelect.getValue() : (document.getElementById('task-category')?.value || 'Work');
             dataItem.subtasks = [...tempSubtasks]; 
         } else if (type === 'event') {
             const eventEndChoice = document.querySelector('input[name="event-end-choice"]:checked').value;
@@ -978,6 +1068,12 @@ export function initFormSubmit(modal) {
             dataItem.priority = 'medium'; 
         } else if (type === 'habit') {
             dataItem.priority = 'medium';
+            const habitTimesVal = parseInt(document.getElementById('habit-times-per-day').value, 10) || 1;
+            dataItem.timesPerDay = Math.max(1, habitTimesVal);
+            dataItem.reminderTimes = [...tempHabitTimers];
+            if (tempHabitTimers.length > 0) {
+                dataItem.startTime = tempHabitTimers[0];
+            }
         }
 
         getTasksFromFirebase().then(allItems => {
@@ -985,6 +1081,9 @@ export function initFormSubmit(modal) {
             if (originalItem) {
                 if (originalItem.completedDates) {
                     dataItem.completedDates = originalItem.completedDates;
+                }
+                if (originalItem.dailyProgress) {
+                    dataItem.dailyProgress = originalItem.dailyProgress;
                 }
                 if (originalItem.createdAt) {
                     dataItem.createdAt = originalItem.createdAt;
@@ -1121,6 +1220,9 @@ export function renderTaskCard(item, { isHistory = false, showHabitCalendar = tr
     }
 
     let timeInfo = item.startTime ? ` <i class="fa-regular fa-clock"></i> ${formatTaskTimeDisplay(item.startTime)}` : '';
+    if (item.type === 'habit' && item.reminderTimes && item.reminderTimes.length > 0) {
+        timeInfo = ` <i class="fa-regular fa-bell"></i> ${item.reminderTimes.map(t => formatTaskTimeDisplay(t)).join(', ')}`;
+    }
     let freqText = '';
     
     if (item.frequency && item.frequency !== 'none') {
@@ -1130,9 +1232,10 @@ export function renderTaskCard(item, { isHistory = false, showHabitCalendar = tr
     }
     
     let progressBadge = '';
-    if (item.timesPerDay > 1 && !item.isCompleted && !item.isCancelled && !item.isDeleted) {
+    if (item.timesPerDay > 1 && !item.isCancelled && !item.isDeleted) {
         let count = item.completedCount || 0;
-        progressBadge = `<span class="progress-badge">${count}/${item.timesPerDay}</span>`;
+        if (item.isCompleted) count = item.timesPerDay;
+        progressBadge = `<span class="progress-badge ${item.isCompleted ? 'completed' : ''}">${count}/${item.timesPerDay}</span>`;
     }
 
     if (item.isCancelled) {
@@ -1144,6 +1247,12 @@ export function renderTaskCard(item, { isHistory = false, showHabitCalendar = tr
     }
 
     let flagIcon = '';
+    let categoryBadgeHTML = '';
+    if (item.type === 'task' || !item.type) {
+        const cat = item.category || 'Work';
+        const catMeta = getCategoryMeta(cat);
+        categoryBadgeHTML = `<span class="task-category-pill" style="border: 1px solid ${catMeta.color}35; background:${catMeta.bg}; color:${catMeta.color};"><span class="cat-dot" style="background:${catMeta.color};"></span>${catMeta.name}</span>`;
+    }
     if (item.type === 'task') {
         if (item.priority === 'high') flagIcon = ' <i class="fa-solid fa-flag" style="color: #FF4D4F; font-size: 13px;"></i>';
         else if (item.priority === 'medium') flagIcon = ' <i class="fa-solid fa-flag" style="color: #FFA940; font-size: 13px;"></i>';
@@ -1206,7 +1315,10 @@ export function renderTaskCard(item, { isHistory = false, showHabitCalendar = tr
             } else {
                 const isChecked = item.completedDates && item.completedDates.includes(dayDateStr);
                 const isSkipped = item.skippedDates && item.skippedDates.includes(dayDateStr);
-                if (isChecked) {
+                const dayProgress = (item.dailyProgress && item.dailyProgress[dayDateStr]) || 0;
+                const target = item.timesPerDay || 1;
+
+                if (isChecked || (dayProgress >= target && target > 0)) {
                     dayClass += ' checked';
                     dayContent = '<i class="fa-solid fa-check"></i>';
                 } else if (isSkipped) {
@@ -1214,7 +1326,7 @@ export function renderTaskCard(item, { isHistory = false, showHabitCalendar = tr
                     dayContent = '<i class="fa-solid fa-ban"></i>';
                 } else if (isToday && isScheduled) {
                     dayClass += ' today-scheduled';
-                    dayContent = `${d}`;
+                    dayContent = target > 1 && dayProgress > 0 ? `${dayProgress}/${target}` : `${d}`;
                 } else {
                     dayClass += ' unchecked';
                     dayContent = '<i class="fa-solid fa-xmark"></i>';
@@ -1325,23 +1437,33 @@ export function renderTaskCard(item, { isHistory = false, showHabitCalendar = tr
         dueInfo = ` <span style="font-size:11px; color:#FF4D4F; margin-left: 8px; font-weight: 500;"><i class="fa-regular fa-calendar-xmark"></i> Due: ${item.dueDate}${item.dueTime ? ' ' + formatTaskTimeDisplay(item.dueTime) : ''}</span>`;
     }
 
+    const isSwipeable = !isHistory && !item.isCompleted && !item.isCancelled && !item.isDeleted;
+    const canCancel = isSwipeable && item.type !== 'habit';
+
     return `
-        <div class="task-wrapper type-${item.type}" onclick="showItemDetails('${item.id}')">
-            <div class="task-item ${itemClass}" style="border-left-color: ${getColor(item.priority)}; border-left-width: 0;">
-                <div class="task-info-simple">
-                    <span onclick="event.stopPropagation();">${checkboxHTML}</span>
-                    <h4 class="task-item-title">
-                        ${typeBadgeHTML}${item.title} ${flagIcon} ${progressBadge}
-                        <span style="font-size:12px; color:var(--text-muted); font-weight:normal;">${timeInfo} ${freqText}</span>
-                        ${dueInfo}
-                    </h4>
-                </div>
-                <div class="task-actions" onclick="event.stopPropagation();">
-                    <div class="task-actions-desktop">${actionButtons}</div>
-                    <div class="task-menu-container">
-                        <button class="btn-menu" onclick="toggleTaskDropdown(event, '${item.id}')"><i class="fa-solid fa-ellipsis-vertical"></i></button>
-                        <div class="task-dropdown" id="dropdown-${item.id}">
-                            ${dropdownItems}
+        <div class="task-wrapper type-${item.type}" data-task-id="${item.id}" onclick="showItemDetails('${item.id}')">
+            <div class="task-swipe-wrapper ${isSwipeable ? 'swipeable-task' : ''}" data-task-id="${item.id}" data-can-cancel="${canCancel ? 'true' : 'false'}">
+                ${isSwipeable ? `
+                <div class="task-swipe-track">
+                    <div class="task-swipe-action task-swipe-action-done"><i class="fa-solid fa-check"></i> <span>Done</span></div>
+                    ${canCancel ? `<div class="task-swipe-action task-swipe-action-wontdo"><span>Won't Do</span> <i class="fa-solid fa-ban"></i></div>` : `<div class="task-swipe-action"></div>`}
+                </div>` : ''}
+                <div class="task-item ${itemClass}" style="border-left-color: ${getColor(item.priority)}; border-left-width: 0;">
+                    <div class="task-info-simple">
+                        <span onclick="event.stopPropagation();">${checkboxHTML}</span>
+                        <h4 class="task-item-title">
+                            ${typeBadgeHTML}${item.title} ${categoryBadgeHTML} ${flagIcon} ${progressBadge}
+                            <span style="font-size:12px; color:var(--text-muted); font-weight:normal;">${timeInfo} ${freqText}</span>
+                            ${dueInfo}
+                        </h4>
+                    </div>
+                    <div class="task-actions" onclick="event.stopPropagation();">
+                        <div class="task-actions-desktop">${actionButtons}</div>
+                        <div class="task-menu-container">
+                            <button class="btn-menu" onclick="toggleTaskDropdown(event, '${item.id}')"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+                            <div class="task-dropdown" id="dropdown-${item.id}">
+                                ${dropdownItems}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1382,7 +1504,14 @@ export function displayTasks() {
         window.allActiveItemsList = items.filter(t => (!t.isCompleted || t.type === 'habit' || (t.frequency && t.frequency !== 'none')) && !t.isCancelled && !t.isDeleted);
 
         habits.forEach(h => {
-            h.isCompleted = !!(h.completedDates && h.completedDates.includes(todayStr));
+            const target = h.timesPerDay || 1;
+            if (!h.dailyProgress) h.dailyProgress = {};
+            if (h.completedDates && h.completedDates.includes(todayStr) && (h.dailyProgress[todayStr] === undefined)) {
+                h.dailyProgress[todayStr] = target;
+            }
+            const todayCount = h.dailyProgress[todayStr] || 0;
+            h.completedCount = todayCount;
+            h.isCompleted = todayCount >= target;
         });
         const activeHabits = habits.sort((a, b) => b.createdAt - a.createdAt);
         const historyItems = items.filter(t => (t.isCompleted || t.isCancelled || t.isDeleted) && (t.type !== 'habit' || t.isDeleted)).sort((a, b) => b.createdAt - a.createdAt);
@@ -1487,7 +1616,7 @@ export function sortAndRenderDashboard() {
     if (!container) return;
 
     const now = new Date();
-    let fingerprint = `${window.currentTaskFilter || 'all'}:${window.currentTaskSort || 'default'}:${window.customFilterStartDate || ''}:${window.customFilterEndDate || ''}|`;
+    let fingerprint = `${window.currentTaskFilter || 'all'}:${window.currentCategoryFilter || 'all'}:${window.currentTaskSort || 'default'}:${window.customFilterStartDate || ''}:${window.customFilterEndDate || ''}|`;
     (window.activeTasksList || []).forEach(item => {
         let startInstant = item.startDate ? parseLocalISOString(item.startDate, item.startTime || '00:00') : now;
         let dueInstant = item.dueDate ? parseLocalISOString(item.dueDate, item.dueTime || '23:59') : null;
@@ -1567,6 +1696,14 @@ export function sortAndRenderDashboard() {
                 return taskStart <= window.customFilterEndDate && taskEnd >= window.customFilterStartDate;
             }
             return true;
+        });
+    }
+
+    const categoryVal = window.currentCategoryFilter || 'all';
+    if (categoryVal !== 'all') {
+        filteredTasks = filteredTasks.filter(item => {
+            const itemCat = item.category || 'Work';
+            return itemCat.toLowerCase() === categoryVal.toLowerCase();
         });
     }
 
@@ -1859,17 +1996,36 @@ export function toggleItemComplete(id, currentStatus) {
         const hasRepeat = item.frequency && item.frequency !== 'none';
 
         if (item.type === 'habit') {
+            const target = item.timesPerDay || 1;
+            if (!item.dailyProgress) item.dailyProgress = {};
             if (!item.completedDates) item.completedDates = [];
-            const idx = item.completedDates.indexOf(todayStr);
-            if (idx > -1) {
-                item.completedDates.splice(idx, 1);
+
+            if (currentStatus) {
+                // If already completed today, toggle resets progress for today
+                item.dailyProgress[todayStr] = 0;
+                item.completedDates = item.completedDates.filter(d => d !== todayStr);
                 item.isCompleted = false;
                 item.completedCount = 0;
             } else {
-                item.completedDates.push(todayStr);
-                item.isCompleted = true;
-                item.completedCount = 1;
-                showToast('Awesome! Marked as complete.', 'success', true);
+                let currentCount = item.dailyProgress[todayStr] || 0;
+                currentCount += 1;
+                item.dailyProgress[todayStr] = currentCount;
+                item.completedCount = currentCount;
+
+                if (currentCount >= target) {
+                    item.isCompleted = true;
+                    if (!item.completedDates.includes(todayStr)) {
+                        item.completedDates.push(todayStr);
+                    }
+                    if (item.skippedDates) {
+                        item.skippedDates = item.skippedDates.filter(d => d !== todayStr);
+                    }
+                    showToast('Awesome! Marked as complete.', 'success', true);
+                } else {
+                    item.isCompleted = false;
+                    playSound('check');
+                    showToast(`Good job! ${currentCount}/${target} completed.`, 'info', false);
+                }
             }
         } else if (hasRepeat) {
             if (!item.completedDates) item.completedDates = [];
@@ -1974,24 +2130,29 @@ export function toggleHabitDay(event, id, dateStr) {
         
         if (!item.completedDates) item.completedDates = [];
         if (!item.skippedDates) item.skippedDates = [];
+        if (!item.dailyProgress) item.dailyProgress = {};
+        const target = item.timesPerDay || 1;
         
         const doneIdx = item.completedDates.indexOf(dateStr);
         const skippedIdx = item.skippedDates.indexOf(dateStr);
         
         if (doneIdx === -1 && skippedIdx === -1) {
             item.completedDates.push(dateStr);
+            item.dailyProgress[dateStr] = target;
             playSound('check');
         } else if (doneIdx > -1) {
             item.completedDates.splice(doneIdx, 1);
             item.skippedDates.push(dateStr);
+            delete item.dailyProgress[dateStr];
         } else if (skippedIdx > -1) {
             item.skippedDates.splice(skippedIdx, 1);
+            delete item.dailyProgress[dateStr];
         }
         
         const todayStr = getTodayStr();
-        
-        item.isCompleted = item.completedDates.includes(todayStr);
-        item.completedCount = item.isCompleted ? 1 : 0;
+        const todayCount = (item.dailyProgress && item.dailyProgress[todayStr]) || (item.completedDates.includes(todayStr) ? target : 0);
+        item.completedCount = todayCount;
+        item.isCompleted = todayCount >= target;
         
         saveTaskToFirebase(item).then(() => {
             displayTasks();
@@ -2020,6 +2181,7 @@ window.toggleSubtask = toggleSubtask;
 // global function from utils.js which is bundled first.
 
 export function showItemDetails(id) {
+    if (window._justSwipedTaskId) return;
     getTasksFromFirebase().then(tasks => {
         const item = tasks.find(t => String(t.id) === String(id));
         if (!item) return;
@@ -2067,6 +2229,25 @@ export function showItemDetails(id) {
                     ` : ''}
                 </div>
             `;
+            if (item.type === 'habit') {
+                if (item.timesPerDay && item.timesPerDay > 1) {
+                    scheduleHTML += `
+                        <div class="details-block" style="margin-top: 12px;">
+                            <span class="details-block-label">Daily Goal</span>
+                            <span class="details-block-value"><i class="fa-solid fa-repeat"></i> ${item.timesPerDay} times per day</span>
+                        </div>
+                    `;
+                }
+                if (item.reminderTimes && item.reminderTimes.length > 0) {
+                    const timesStr = item.reminderTimes.map(t => formatTime12h(t)).join(', ');
+                    scheduleHTML += `
+                        <div class="details-block" style="margin-top: 12px;">
+                            <span class="details-block-label">Reminder Timers</span>
+                            <span class="details-block-value"><i class="fa-regular fa-bell"></i> ${timesStr}</span>
+                        </div>
+                    `;
+                }
+            }
         }
 
         let descHTML = '';
@@ -2122,10 +2303,18 @@ export function showItemDetails(id) {
             `;
         }
 
+        let categoryBadgeDetails = '';
+        if (item.type === 'task' || !item.type) {
+            const cat = item.category || 'Work';
+            const catMeta = getCategoryMeta(cat);
+            categoryBadgeDetails = `<span class="task-category-pill" style="border: 1px solid ${catMeta.color}35; background:${catMeta.bg}; color:${catMeta.color}; padding: 4px 10px; border-radius: 12px; font-size:12px; font-weight:600;"><span class="cat-dot" style="background:${catMeta.color};"></span>${catMeta.name}</span>`;
+        }
+
         bodyEl.innerHTML = `
             <div class="details-meta-row">
                 <span class="details-badge ${typeLabel}">${typeLabel}</span>
                 ${item.type === 'task' ? `<span class="details-priority">${priorityFlag}</span>` : ''}
+                ${categoryBadgeDetails}
                 ${item.isCompleted ? `<span class="badge-completed" style="background: rgba(115,209,61,0.15); color: #73D13D; padding: 4px 10px; border-radius: 12px; font-size:12px; font-weight:600;">Completed</span>` : ''}
                 ${item.isCancelled ? `<span class="badge-cancelled" style="background: rgba(255,77,79,0.15); color: #FF4D4F; padding: 4px 10px; border-radius: 12px; font-size:12px; font-weight:600;">Cancelled</span>` : ''}
             </div>
@@ -2263,6 +2452,8 @@ export function skipHabitInDetails(id) {
         const todayStr = getTodayStr();
         if (!item.skippedDates) item.skippedDates = [];
         if (!item.completedDates) item.completedDates = [];
+        if (!item.dailyProgress) item.dailyProgress = {};
+        const target = item.timesPerDay || 1;
         
         const skippedIdx = item.skippedDates.indexOf(todayStr);
         const completedIdx = item.completedDates.indexOf(todayStr);
@@ -2274,10 +2465,12 @@ export function skipHabitInDetails(id) {
             if (completedIdx > -1) {
                 item.completedDates.splice(completedIdx, 1);
             }
+            delete item.dailyProgress[todayStr];
         }
         
-        item.isCompleted = item.completedDates.includes(todayStr);
-        item.completedCount = item.isCompleted ? 1 : 0;
+        const todayCount = (item.dailyProgress && item.dailyProgress[todayStr]) || (item.completedDates.includes(todayStr) ? target : 0);
+        item.completedCount = todayCount;
+        item.isCompleted = todayCount >= target;
         
         saveTaskToFirebase(item).then(() => {
             displayTasks();
@@ -2485,3 +2678,169 @@ window.initSettings = initSettings;
 window.addEventListener('flowtick-data-changed', () => {
     displayTasks();
 });
+
+export function cancelTaskByGesture(id) {
+    getTasksFromFirebase().then(tasks => {
+        const item = tasks.find(t => String(t.id) === String(id));
+        if (item) {
+            item.isCancelled = true;
+            item.isCompleted = false;
+            saveTaskToFirebase(item).then(() => {
+                if (scheduleItemNotifications) {
+                    scheduleItemNotifications(item);
+                }
+                playSound('check');
+                showToast("Task marked as Won't Do", 'info', false);
+                displayTasks();
+                if (window.calendarInstance) window.calendarInstance.refetchEvents();
+            });
+        }
+    });
+}
+window.cancelTaskByGesture = cancelTaskByGesture;
+
+export function initTaskSwipeGestures() {
+    let startX = 0;
+    let startY = 0;
+    let isTracking = false;
+    let isSwiping = false;
+    let currentWrapper = null;
+    let currentItemEl = null;
+    let doneActionEl = null;
+    let wontDoActionEl = null;
+    let canCancel = true;
+    let taskId = null;
+    let activePointerId = null;
+
+    const resetSwipedElement = (animated = true) => {
+        if (!currentItemEl) return;
+        if (animated) {
+            currentItemEl.style.transition = 'transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1)';
+        } else {
+            currentItemEl.style.transition = 'none';
+        }
+        currentItemEl.style.transform = 'translateX(0px)';
+        if (doneActionEl) doneActionEl.style.opacity = '0';
+        if (wontDoActionEl) wontDoActionEl.style.opacity = '0';
+    };
+
+    document.addEventListener('pointerdown', (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
+
+        // Ignore interactive elements
+        if (e.target.closest('button, input, .custom-checkbox, .btn-menu, .task-dropdown, .subtasks-wrapper, .habit-calendar-wrapper, .history-type-badge')) {
+            return;
+        }
+
+        const wrapper = e.target.closest('.task-swipe-wrapper.swipeable-task');
+        if (!wrapper) return;
+
+        const itemEl = wrapper.querySelector('.task-item');
+        if (!itemEl) return;
+
+        startX = e.clientX;
+        startY = e.clientY;
+        isTracking = true;
+        isSwiping = false;
+        activePointerId = e.pointerId;
+        currentWrapper = wrapper;
+        currentItemEl = itemEl;
+        doneActionEl = wrapper.querySelector('.task-swipe-action-done');
+        wontDoActionEl = wrapper.querySelector('.task-swipe-action-wontdo');
+        canCancel = wrapper.getAttribute('data-can-cancel') === 'true';
+        taskId = wrapper.getAttribute('data-task-id');
+
+        currentItemEl.style.transition = 'none';
+    }, { passive: true });
+
+    document.addEventListener('pointermove', (e) => {
+        if (!isTracking || e.pointerId !== activePointerId || !currentItemEl) return;
+
+        const deltaX = e.clientX - startX;
+        const deltaY = e.clientY - startY;
+
+        if (!isSwiping) {
+            // Check vertical scroll vs horizontal swipe
+            if (Math.abs(deltaY) > 7 && Math.abs(deltaY) > Math.abs(deltaX)) {
+                isTracking = false;
+                resetSwipedElement(false);
+                return;
+            }
+            if (Math.abs(deltaX) > 8) {
+                if (deltaX < 0 && !canCancel) {
+                    isTracking = false;
+                    return;
+                }
+                isSwiping = true;
+            }
+        }
+
+        if (isSwiping) {
+            let moveX = deltaX;
+            if (moveX < 0 && !canCancel) {
+                moveX = 0;
+            }
+            if (Math.abs(moveX) > 90) {
+                const sign = moveX > 0 ? 1 : -1;
+                const extra = Math.abs(moveX) - 90;
+                moveX = sign * (90 + Math.pow(extra, 0.75));
+            }
+
+            currentItemEl.style.transform = `translateX(${moveX}px)`;
+
+            if (moveX > 0) {
+                if (doneActionEl) doneActionEl.style.opacity = String(Math.min(1, Math.max(0, (moveX - 10) / 60)));
+                if (wontDoActionEl) wontDoActionEl.style.opacity = '0';
+            } else if (moveX < 0) {
+                if (wontDoActionEl) wontDoActionEl.style.opacity = String(Math.min(1, Math.max(0, (Math.abs(moveX) - 10) / 60)));
+                if (doneActionEl) doneActionEl.style.opacity = '0';
+            }
+        }
+    }, { passive: true });
+
+    const handlePointerEnd = (e) => {
+        if (!isTracking || e.pointerId !== activePointerId) return;
+
+        isTracking = false;
+        activePointerId = null;
+
+        if (isSwiping && currentItemEl && taskId) {
+            const deltaX = e.clientX - startX;
+            window._justSwipedTaskId = taskId;
+            setTimeout(() => { window._justSwipedTaskId = null; }, 350);
+
+            const threshold = 75;
+            const targetItemEl = currentItemEl;
+            const targetTaskId = taskId;
+
+            if (deltaX > threshold) {
+                // Swipe Right -> Mark Done
+                targetItemEl.style.transition = 'transform 0.22s ease-out';
+                targetItemEl.style.transform = 'translateX(105%)';
+                setTimeout(() => {
+                    toggleItemComplete(targetTaskId, false);
+                }, 180);
+            } else if (deltaX < -threshold && canCancel) {
+                // Swipe Left -> Won't Do
+                targetItemEl.style.transition = 'transform 0.22s ease-out';
+                targetItemEl.style.transform = 'translateX(-105%)';
+                setTimeout(() => {
+                    cancelTaskByGesture(targetTaskId);
+                }, 180);
+            } else {
+                resetSwipedElement(true);
+            }
+        } else {
+            resetSwipedElement(true);
+        }
+
+        isSwiping = false;
+        currentWrapper = null;
+        currentItemEl = null;
+    };
+
+    document.addEventListener('pointerup', handlePointerEnd, { passive: true });
+    document.addEventListener('pointercancel', handlePointerEnd, { passive: true });
+}
+
+window.initTaskSwipeGestures = initTaskSwipeGestures;

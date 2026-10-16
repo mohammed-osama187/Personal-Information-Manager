@@ -369,3 +369,133 @@ export async function syncGuestDataToFirebase(userId) {
         showToast('Failed to sync some guest tasks. We will try again later.', 'error');
     }
 }
+
+// ==========================================
+// Notes Persistence Helpers
+// ==========================================
+export async function getNotesFromFirebase() {
+    const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+    if (!currentUser) {
+        const guestNotes = localStorage.getItem('guest_notes');
+        return guestNotes ? JSON.parse(guestNotes) : [];
+    }
+
+    const localData = localStorage.getItem('firebase_notes_cache');
+    const cachedNotes = localData ? JSON.parse(localData) : [];
+
+    if (db && navigator.onLine) {
+        fetchAndCacheNotesFromFirebase(currentUser.id, cachedNotes);
+    }
+
+    return cachedNotes;
+}
+
+let isFetchingBackgroundNotes = false;
+async function fetchAndCacheNotesFromFirebase(currentUserId, cachedNotes) {
+    if (isFetchingBackgroundNotes || !db || !navigator.onLine) return;
+    isFetchingBackgroundNotes = true;
+
+    try {
+        const q = query(collection(db, "notes"), where("userId", "==", currentUserId));
+        const querySnapshot = await getDocs(q);
+        const notes = [];
+        querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            data.id = docSnap.id;
+            notes.push(data);
+        });
+
+        localStorage.setItem('firebase_notes_cache', JSON.stringify(notes));
+        window.dispatchEvent(new CustomEvent('flowtick-notes-changed'));
+    } catch (err) {
+        console.warn("[db] Failed to fetch notes from Firestore:", err);
+    } finally {
+        isFetchingBackgroundNotes = false;
+    }
+}
+
+export async function saveNoteToFirebase(note) {
+    const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+    const isGuest = !currentUser;
+
+    if (!note.id) {
+        note.id = isGuest ? 'guest_note_' + Date.now() : 'note_' + Date.now();
+    }
+    if (!note.createdAt) note.createdAt = Date.now();
+    note.updatedAt = Date.now();
+    note.userId = currentUser ? currentUser.id : 'guest';
+
+    if (isGuest) {
+        let guestNotes = JSON.parse(localStorage.getItem('guest_notes')) || [];
+        const idx = guestNotes.findIndex(n => String(n.id) === String(note.id));
+        if (idx > -1) {
+            guestNotes[idx] = note;
+        } else {
+            guestNotes.unshift(note);
+        }
+        localStorage.setItem('guest_notes', JSON.stringify(guestNotes));
+        window.dispatchEvent(new CustomEvent('flowtick-notes-changed'));
+        return note;
+    }
+
+    // Logged in user: optimistic local cache update
+    let cachedNotes = JSON.parse(localStorage.getItem('firebase_notes_cache')) || [];
+    const idx = cachedNotes.findIndex(n => String(n.id) === String(note.id));
+    if (idx > -1) {
+        cachedNotes[idx] = note;
+    } else {
+        cachedNotes.unshift(note);
+    }
+    localStorage.setItem('firebase_notes_cache', JSON.stringify(cachedNotes));
+    window.dispatchEvent(new CustomEvent('flowtick-notes-changed'));
+
+    if (db && navigator.onLine) {
+        try {
+            const dataToSave = { ...note };
+            const noteId = dataToSave.id;
+            delete dataToSave.id;
+            if (noteId && !noteId.startsWith('note_')) {
+                await updateDoc(doc(db, "notes", noteId), dataToSave);
+            } else {
+                const docRef = await addDoc(collection(db, "notes"), dataToSave);
+                note.id = docRef.id;
+                const currentCache = JSON.parse(localStorage.getItem('firebase_notes_cache')) || [];
+                const cIdx = currentCache.findIndex(n => String(n.id) === String(noteId));
+                if (cIdx > -1) {
+                    currentCache[cIdx].id = docRef.id;
+                    localStorage.setItem('firebase_notes_cache', JSON.stringify(currentCache));
+                }
+            }
+        } catch (e) {
+            console.error("[db] Error saving note to Firestore:", e);
+        }
+    }
+    return note;
+}
+
+export async function deleteNoteFromFirebase(id) {
+    const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+    const isGuest = !currentUser;
+
+    if (isGuest) {
+        let guestNotes = JSON.parse(localStorage.getItem('guest_notes')) || [];
+        guestNotes = guestNotes.filter(n => String(n.id) !== String(id));
+        localStorage.setItem('guest_notes', JSON.stringify(guestNotes));
+        window.dispatchEvent(new CustomEvent('flowtick-notes-changed'));
+        return;
+    }
+
+    let cachedNotes = JSON.parse(localStorage.getItem('firebase_notes_cache')) || [];
+    cachedNotes = cachedNotes.filter(n => String(n.id) !== String(id));
+    localStorage.setItem('firebase_notes_cache', JSON.stringify(cachedNotes));
+    window.dispatchEvent(new CustomEvent('flowtick-notes-changed'));
+
+    if (db && navigator.onLine && id && !id.startsWith('note_')) {
+        try {
+            await deleteDoc(doc(db, "notes", id));
+        } catch (e) {
+            console.error("[db] Error deleting note from Firestore:", e);
+        }
+    }
+}
+

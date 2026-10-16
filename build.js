@@ -7,7 +7,7 @@ const destDir = path.join(__dirname, 'build');
 if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
 
 // ── Static assets to copy ────────────────────────────────────────────────────
-const filesToCopy = ['index.html', 'manifest.json', 'sw.js', 'logo.png', 'logo1.png'];
+const filesToCopy = ['index.html', 'manifest.json', 'sw.js', 'logo.png', 'logo1.png', 'version.json'];
 const dirsToCopy  = ['css', 'sounds', 'assets'];
 
 console.log('Building web assets...');
@@ -43,6 +43,8 @@ const BUNDLE_ORDER = [
     'js/auth.js',
     'js/calendar.js',
     'js/timer.js',
+    'js/notes.js',
+    'js/updates.js',
     'js/ui.js',
     'js/app.js',
 ];

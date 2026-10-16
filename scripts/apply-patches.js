@@ -5,7 +5,7 @@ const srcDir = path.join(__dirname, '..', 'android-custom-plugins', 'local-notif
 const destDir = path.join(__dirname, '..', 'node_modules', '@capacitor', 'local-notifications', 'android', 'src', 'main', 'java', 'com', 'capacitorjs', 'plugins', 'localnotifications');
 
 if (fs.existsSync(srcDir) && fs.existsSync(destDir)) {
-    const files = ['LocalNotificationManager.java', 'LocalNotificationsPlugin.java'];
+    const files = ['LocalNotificationManager.java', 'LocalNotificationsPlugin.java', 'TimedNotificationPublisher.java'];
     files.forEach(file => {
         const src = path.join(srcDir, file);
         const dest = path.join(destDir, file);

@@ -150,3 +150,32 @@ export function applyThemePreference(theme) {
         }
     }
 }
+
+export function getCategoryMeta(categoryName) {
+    const defaultMeta = {
+        name: 'Work',
+        color: '#2F7BF6',
+        bg: 'rgba(47, 123, 246, 0.12)',
+        icon: 'fa-briefcase'
+    };
+    if (!categoryName) return defaultMeta;
+
+    const dict = {
+        'work': { name: 'Work', color: '#2F7BF6', bg: 'rgba(47, 123, 246, 0.12)', icon: 'fa-briefcase' },
+        'personal': { name: 'Personal', color: '#52C41A', bg: 'rgba(82, 196, 26, 0.12)', icon: 'fa-user' },
+        'study': { name: 'Study', color: '#722ED1', bg: 'rgba(114, 46, 209, 0.12)', icon: 'fa-graduation-cap' },
+        'health': { name: 'Health', color: '#FA8C16', bg: 'rgba(250, 140, 22, 0.12)', icon: 'fa-heart-pulse' },
+        'finance': { name: 'Finance', color: '#13C2C2', bg: 'rgba(19, 194, 194, 0.12)', icon: 'fa-wallet' },
+        'other': { name: 'Other', color: '#8C8C8C', bg: 'rgba(140, 140, 140, 0.12)', icon: 'fa-tag' }
+    };
+
+    const key = String(categoryName).trim().toLowerCase();
+    return dict[key] || {
+        name: categoryName,
+        color: '#8C8C8C',
+        bg: 'rgba(140, 140, 140, 0.12)',
+        icon: 'fa-tag'
+    };
+}
+window.getCategoryMeta = getCategoryMeta;
+

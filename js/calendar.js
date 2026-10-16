@@ -6,6 +6,8 @@ export function initCalendar() {
     const calendarEl = document.getElementById('calendar-placeholder');
     if (!calendarEl) return;
 
+    const is12h = (localStorage.getItem('timeFormat') || '12h') === '12h';
+
     const calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: 'dayGridMonth',
         direction: 'ltr',
@@ -21,6 +23,20 @@ export function initCalendar() {
             month: 'Month', 
             week: 'Week', 
             day: 'Day' 
+        },
+        slotDuration: '00:30:00',
+        displayEventEnd: true,
+        eventTimeFormat: {
+            hour: 'numeric',
+            minute: '2-digit',
+            meridiem: is12h ? 'short' : false,
+            hour12: is12h
+        },
+        slotLabelFormat: {
+            hour: 'numeric',
+            minute: '2-digit',
+            meridiem: is12h ? 'short' : false,
+            hour12: is12h
         },
         eventClick: function(info) { 
             if (info.event.id) showItemDetails(info.event.id); 
@@ -122,11 +138,13 @@ export function initCalendar() {
                             
                             if (shouldRender) {
                                 let dateStr = formatLocalDate(currDate);
-                                let eventStart = dateStr + (item.startTime ? 'T' + item.startTime : '');
+                                let eventStart = dateStr + (item.startTime ? 'T' + (item.startTime.length === 5 ? item.startTime + ':00' : item.startTime) : '');
+                                let eventEnd = (isEvent && item.endTime) ? dateStr + 'T' + (item.endTime.length === 5 ? item.endTime + ':00' : item.endTime) : null;
                                 allEvents.push({ 
                                     id: item.id, 
                                     title: item.title, 
                                     start: eventStart, 
+                                    end: eventEnd,
                                     color: color, 
                                     className: className, 
                                     allDay: !item.startTime 
@@ -134,49 +152,42 @@ export function initCalendar() {
                             }
                             currDate.setDate(currDate.getDate() + 1);
                         }
-                    } else if (isTask && item.dueDate && item.dueDate !== item.startDate) {
-                        let currDate = parseLocalDate(item.startDate);
-                        let endDateObj = parseLocalDate(item.dueDate);
-                        while (currDate <= endDateObj) {
-                            let dateStr = formatLocalDate(currDate);
-                            let eventStart = dateStr + (item.startTime ? 'T' + item.startTime : '');
-                            allEvents.push({ 
-                                id: item.id, 
-                                title: item.title, 
-                                start: eventStart, 
-                                color: color, 
-                                className: className, 
-                                allDay: !item.startTime 
-                            });
-                            currDate.setDate(currDate.getDate() + 1);
+                    } else if (isEvent) {
+                        // Events: render as a single event object with accurate start and end ISO strings (NO duplicate looping)
+                        let startStr = item.startDate + (item.startTime ? 'T' + (item.startTime.length === 5 ? item.startTime + ':00' : item.startTime) : '');
+                        let eventEndDate = item.endDate || item.startDate;
+                        let endStr = null;
+                        if (item.endTime) {
+                            endStr = eventEndDate + 'T' + (item.endTime.length === 5 ? item.endTime + ':00' : item.endTime);
+                        } else if (item.endDate && item.endDate !== item.startDate) {
+                            endStr = item.endDate;
                         }
-                    } else if (item.type === 'event' && item.endDate && item.endDate !== item.startDate) {
-                        let currDate = parseLocalDate(item.startDate);
-                        let endDateObj = parseLocalDate(item.endDate);
-                        while (currDate <= endDateObj) {
-                            let dateStr = formatLocalDate(currDate);
-                            let eventStart = dateStr + (item.startTime ? 'T' + item.startTime : '');
-                            let eventEnd = item.endTime ? dateStr + 'T' + item.endTime : null;
-                            allEvents.push({ 
-                                id: item.id, 
-                                title: item.title, 
-                                start: eventStart, 
-                                end: eventEnd, 
-                                color: color, 
-                                className: className 
-                            });
-                            currDate.setDate(currDate.getDate() + 1);
-                        }
-                    } else {
-                        let startStr = item.startDate + (item.startTime ? 'T' + item.startTime : '');
-                        let endStr = (item.type === 'event' && item.endDate) ? item.endDate + (item.endTime ? 'T' + item.endTime : '') : null;
                         allEvents.push({ 
                             id: item.id, 
                             title: item.title, 
                             start: startStr, 
                             end: endStr, 
                             color: color, 
-                            className: className 
+                            className: className,
+                            allDay: !item.startTime
+                        });
+                    } else {
+                        // Tasks & Habits without repeat
+                        let startStr = item.startDate + (item.startTime ? 'T' + (item.startTime.length === 5 ? item.startTime + ':00' : item.startTime) : '');
+                        let endStr = null;
+                        if (isTask && item.dueDate && item.dueTime) {
+                            endStr = item.dueDate + 'T' + (item.dueTime.length === 5 ? item.dueTime + ':00' : item.dueTime);
+                        } else if (isTask && item.dueDate && item.dueDate !== item.startDate) {
+                            endStr = item.dueDate;
+                        }
+                        allEvents.push({ 
+                            id: item.id, 
+                            title: item.title, 
+                            start: startStr, 
+                            end: endStr, 
+                            color: color, 
+                            className: className,
+                            allDay: !item.startTime
                         });
                     }
                 });

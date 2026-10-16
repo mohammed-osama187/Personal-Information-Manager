@@ -6,12 +6,15 @@ import {
     displayTasks,
     initModalLogic,
     initSettings,
-    clearLiveDateErrors
+    clearLiveDateErrors,
+    initTaskSwipeGestures
 } from './ui.js';
 import { initPomodoroDrag } from './timer.js';
 import { initCalendar } from './calendar.js';
 import { syncOfflineQueue } from './db.js';
 import { parseLocalISOString, applyThemePreference, showToast } from './utils.js';
+import { initNotesUI } from './notes.js';
+import { initAppUpdates } from './updates.js';
 
 // Immediate synchronous routing check to eliminate auth screen page flash
 (function () {
@@ -77,6 +80,7 @@ export function navigateToPage(targetPage, pushToHistory = true) {
             'tasks-page': 'Tasks',
             'habits-page': 'Habits',
             'calendar-page': 'Calendar',
+            'notes-page': 'Notes',
             'history-page': 'History',
             'pomodoro-page': 'Focus Timer',
             'stats-page': 'Stats',
@@ -214,7 +218,7 @@ function checkIfDashboardNeedsUpdate() {
     if (!window.activeTasksList || window.activeTasksList.length === 0) return false;
 
     const now = new Date();
-    let fingerprint = "";
+    let fingerprint = `${window.currentTaskFilter || 'all'}:${window.currentCategoryFilter || 'all'}:${window.currentTaskSort || 'default'}:${window.customFilterStartDate || ''}:${window.customFilterEndDate || ''}|`;
 
     window.activeTasksList.forEach(item => {
         let startInstant = item.startDate ? parseLocalISOString(item.startDate, item.startTime || '00:00') : new Date();
@@ -286,6 +290,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize premium custom dropdowns and pickers
     window.customPrioritySelect = initCustomSelect('priority-wrapper');
+    window.customCategorySelect = initCustomSelect('category-wrapper');
+    window.currentCategoryFilter = 'all';
     window.customFrequencySelect = initCustomSelect('frequency-wrapper', (val) => {
         const isCustom = (val === 'custom');
         document.getElementById('custom-freq-row').style.display = isCustom ? 'block' : 'none';
@@ -517,6 +523,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initPomodoroDrag();
     initModalLogic();
+    initTaskSwipeGestures();
 
     const listBtn = document.getElementById('view-list-btn');
     const kanbanBtn = document.getElementById('view-kanban-btn');
@@ -546,6 +553,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const initialLayout = localStorage.getItem('dashboardLayout') || 'list';
     setDashboardLayout(initialLayout);
     initSettings();
+    initNotesUI();
+    initAppUpdates();
     initMissedNotificationsUI();
     requestNotificationPermissions();
     requestBatteryOptimization();

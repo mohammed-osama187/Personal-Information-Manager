@@ -157,6 +157,35 @@ function applyThemePreference(theme) {
     }
 }
 
+function getCategoryMeta(categoryName) {
+    const defaultMeta = {
+        name: 'Work',
+        color: '#2F7BF6',
+        bg: 'rgba(47, 123, 246, 0.12)',
+        icon: 'fa-briefcase'
+    };
+    if (!categoryName) return defaultMeta;
+
+    const dict = {
+        'work': { name: 'Work', color: '#2F7BF6', bg: 'rgba(47, 123, 246, 0.12)', icon: 'fa-briefcase' },
+        'personal': { name: 'Personal', color: '#52C41A', bg: 'rgba(82, 196, 26, 0.12)', icon: 'fa-user' },
+        'study': { name: 'Study', color: '#722ED1', bg: 'rgba(114, 46, 209, 0.12)', icon: 'fa-graduation-cap' },
+        'health': { name: 'Health', color: '#FA8C16', bg: 'rgba(250, 140, 22, 0.12)', icon: 'fa-heart-pulse' },
+        'finance': { name: 'Finance', color: '#13C2C2', bg: 'rgba(19, 194, 194, 0.12)', icon: 'fa-wallet' },
+        'other': { name: 'Other', color: '#8C8C8C', bg: 'rgba(140, 140, 140, 0.12)', icon: 'fa-tag' }
+    };
+
+    const key = String(categoryName).trim().toLowerCase();
+    return dict[key] || {
+        name: categoryName,
+        color: '#8C8C8C',
+        bg: 'rgba(140, 140, 140, 0.12)',
+        icon: 'fa-tag'
+    };
+}
+window.getCategoryMeta = getCategoryMeta;
+
+
 
 /* ===== js/db.js ===== */
 // ==========================================
@@ -518,6 +547,136 @@ async function syncGuestDataToFirebase(userId) {
     }
 }
 
+// ==========================================
+// Notes Persistence Helpers
+// ==========================================
+async function getNotesFromFirebase() {
+    const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+    if (!currentUser) {
+        const guestNotes = localStorage.getItem('guest_notes');
+        return guestNotes ? JSON.parse(guestNotes) : [];
+    }
+
+    const localData = localStorage.getItem('firebase_notes_cache');
+    const cachedNotes = localData ? JSON.parse(localData) : [];
+
+    if (db && navigator.onLine) {
+        fetchAndCacheNotesFromFirebase(currentUser.id, cachedNotes);
+    }
+
+    return cachedNotes;
+}
+
+let isFetchingBackgroundNotes = false;
+async function fetchAndCacheNotesFromFirebase(currentUserId, cachedNotes) {
+    if (isFetchingBackgroundNotes || !db || !navigator.onLine) return;
+    isFetchingBackgroundNotes = true;
+
+    try {
+        const q = query(collection(db, "notes"), where("userId", "==", currentUserId));
+        const querySnapshot = await getDocs(q);
+        const notes = [];
+        querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            data.id = docSnap.id;
+            notes.push(data);
+        });
+
+        localStorage.setItem('firebase_notes_cache', JSON.stringify(notes));
+        window.dispatchEvent(new CustomEvent('flowtick-notes-changed'));
+    } catch (err) {
+        console.warn("[db] Failed to fetch notes from Firestore:", err);
+    } finally {
+        isFetchingBackgroundNotes = false;
+    }
+}
+
+async function saveNoteToFirebase(note) {
+    const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+    const isGuest = !currentUser;
+
+    if (!note.id) {
+        note.id = isGuest ? 'guest_note_' + Date.now() : 'note_' + Date.now();
+    }
+    if (!note.createdAt) note.createdAt = Date.now();
+    note.updatedAt = Date.now();
+    note.userId = currentUser ? currentUser.id : 'guest';
+
+    if (isGuest) {
+        let guestNotes = JSON.parse(localStorage.getItem('guest_notes')) || [];
+        const idx = guestNotes.findIndex(n => String(n.id) === String(note.id));
+        if (idx > -1) {
+            guestNotes[idx] = note;
+        } else {
+            guestNotes.unshift(note);
+        }
+        localStorage.setItem('guest_notes', JSON.stringify(guestNotes));
+        window.dispatchEvent(new CustomEvent('flowtick-notes-changed'));
+        return note;
+    }
+
+    // Logged in user: optimistic local cache update
+    let cachedNotes = JSON.parse(localStorage.getItem('firebase_notes_cache')) || [];
+    const idx = cachedNotes.findIndex(n => String(n.id) === String(note.id));
+    if (idx > -1) {
+        cachedNotes[idx] = note;
+    } else {
+        cachedNotes.unshift(note);
+    }
+    localStorage.setItem('firebase_notes_cache', JSON.stringify(cachedNotes));
+    window.dispatchEvent(new CustomEvent('flowtick-notes-changed'));
+
+    if (db && navigator.onLine) {
+        try {
+            const dataToSave = { ...note };
+            const noteId = dataToSave.id;
+            delete dataToSave.id;
+            if (noteId && !noteId.startsWith('note_')) {
+                await updateDoc(doc(db, "notes", noteId), dataToSave);
+            } else {
+                const docRef = await addDoc(collection(db, "notes"), dataToSave);
+                note.id = docRef.id;
+                const currentCache = JSON.parse(localStorage.getItem('firebase_notes_cache')) || [];
+                const cIdx = currentCache.findIndex(n => String(n.id) === String(noteId));
+                if (cIdx > -1) {
+                    currentCache[cIdx].id = docRef.id;
+                    localStorage.setItem('firebase_notes_cache', JSON.stringify(currentCache));
+                }
+            }
+        } catch (e) {
+            console.error("[db] Error saving note to Firestore:", e);
+        }
+    }
+    return note;
+}
+
+async function deleteNoteFromFirebase(id) {
+    const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+    const isGuest = !currentUser;
+
+    if (isGuest) {
+        let guestNotes = JSON.parse(localStorage.getItem('guest_notes')) || [];
+        guestNotes = guestNotes.filter(n => String(n.id) !== String(id));
+        localStorage.setItem('guest_notes', JSON.stringify(guestNotes));
+        window.dispatchEvent(new CustomEvent('flowtick-notes-changed'));
+        return;
+    }
+
+    let cachedNotes = JSON.parse(localStorage.getItem('firebase_notes_cache')) || [];
+    cachedNotes = cachedNotes.filter(n => String(n.id) !== String(id));
+    localStorage.setItem('firebase_notes_cache', JSON.stringify(cachedNotes));
+    window.dispatchEvent(new CustomEvent('flowtick-notes-changed'));
+
+    if (db && navigator.onLine && id && !id.startsWith('note_')) {
+        try {
+            await deleteDoc(doc(db, "notes", id));
+        } catch (e) {
+            console.error("[db] Error deleting note from Firestore:", e);
+        }
+    }
+}
+
+
 
 /* ===== js/notifications.js ===== */
 // Register native notification channels and action types on Android 8+ (API 26+)
@@ -748,6 +907,9 @@ function initNotificationActionListeners() {
             } else if (actionId === 'tap') {
                 if (typeof window.navigateToPage === 'function') {
                     window.navigateToPage('pomodoro-page', true);
+                }
+                if (typeof window.syncTimerWithTimePassed === 'function') {
+                    window.syncTimerWithTimePassed();
                 }
             }
             return;
@@ -1223,55 +1385,66 @@ function scheduleItemNotifications(item) {
     const numericId = getStableNumericId(item.id);
     const dueNumericId = getStableNumericId(item.id) + 999999; 
 
-    // Cancel old notifications to prevent duplicates
+    // Cancel old notifications to prevent duplicates (including multi-timers)
     cancelMobileNotification(numericId);
     cancelMobileNotification(dueNumericId);
+    for (let i = 1; i <= 10; i++) {
+        cancelMobileNotification(numericId + (i * 1000));
+    }
 
     if (item.isCancelled || item.isDeleted) return;
 
     const isRepeating = (item.type === 'habit' || (item.frequency && item.frequency !== 'none'));
     if (item.isCompleted && !isRepeating) return;
 
-    if (item.startDate && item.startTime) {
-        let triggerTime;
-        if (isRepeating) {
-            const now = new Date();
-            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-            
-            const isCompletedToday = item.isCompleted || (item.completedDates && item.completedDates.includes(todayStr));
-            let startFromDate = item.startDate;
-            if (isCompletedToday) {
-                const tomorrow = new Date();
-                tomorrow.setDate(tomorrow.getDate() + 1);
-                startFromDate = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
-            }
-            triggerTime = getNextOccurrenceTime(startFromDate, item.startTime, item.frequency, item.specificDays, item.customNum, item.customUnit);
-        } else {
-            triggerTime = parseLocalISOString(item.startDate, item.startTime);
-        }
+    // Habit multiple reminder timers or single start time
+    const habitTimers = (item.type === 'habit' && Array.isArray(item.reminderTimes) && item.reminderTimes.length > 0)
+        ? item.reminderTimes
+        : (item.startTime ? [item.startTime] : []);
 
-        if (triggerTime && triggerTime > new Date()) {
-            let notifTitle = 'Task Reminder';
-            let notifBody = `It's time for: ${item.title}`;
-            if (item.type === 'event') {
-                notifTitle = 'Event Reminder';
-                notifBody = `Event starting: ${item.title}`;
-            } else if (item.type === 'habit') {
-                notifTitle = 'Habit Reminder';
-                notifBody = `Time for your habit: ${item.title}`;
+    if (item.startDate && habitTimers.length > 0) {
+        habitTimers.forEach((timeStr, idx) => {
+            const subNotifId = idx === 0 ? numericId : numericId + (idx * 1000);
+            let triggerTime;
+            if (isRepeating) {
+                const now = new Date();
+                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                
+                const isCompletedToday = item.isCompleted || (item.completedDates && item.completedDates.includes(todayStr));
+                let startFromDate = item.startDate;
+                if (isCompletedToday) {
+                    const tomorrow = new Date();
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    startFromDate = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+                }
+                triggerTime = getNextOccurrenceTime(startFromDate, timeStr, item.frequency, item.specificDays, item.customNum, item.customUnit);
+            } else {
+                triggerTime = parseLocalISOString(item.startDate, timeStr);
             }
 
-            scheduleMobileNotification(
-                numericId,
-                notifTitle,
-                notifBody,
-                triggerTime,
-                null,
-                'success.mp3',
-                { itemId: item.id, itemType: item.type || 'task' },
-                'TASK_ACTIONS'
-            );
-        }
+            if (triggerTime && triggerTime > new Date()) {
+                let notifTitle = 'Task Reminder';
+                let notifBody = `It's time for: ${item.title}`;
+                if (item.type === 'event') {
+                    notifTitle = 'Event Reminder';
+                    notifBody = `Event starting: ${item.title}`;
+                } else if (item.type === 'habit') {
+                    notifTitle = 'Habit Reminder';
+                    notifBody = `Time for your habit: ${item.title}`;
+                }
+
+                scheduleMobileNotification(
+                    subNotifId,
+                    notifTitle,
+                    notifBody,
+                    triggerTime,
+                    null,
+                    'success.mp3',
+                    { itemId: item.id, itemType: item.type || 'task' },
+                    'TASK_ACTIONS'
+                );
+            }
+        });
     }
 
     // Schedule Deadline (Due Date) if defined
@@ -1521,6 +1694,8 @@ function initCalendar() {
     const calendarEl = document.getElementById('calendar-placeholder');
     if (!calendarEl) return;
 
+    const is12h = (localStorage.getItem('timeFormat') || '12h') === '12h';
+
     const calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: 'dayGridMonth',
         direction: 'ltr',
@@ -1536,6 +1711,20 @@ function initCalendar() {
             month: 'Month', 
             week: 'Week', 
             day: 'Day' 
+        },
+        slotDuration: '00:30:00',
+        displayEventEnd: true,
+        eventTimeFormat: {
+            hour: 'numeric',
+            minute: '2-digit',
+            meridiem: is12h ? 'short' : false,
+            hour12: is12h
+        },
+        slotLabelFormat: {
+            hour: 'numeric',
+            minute: '2-digit',
+            meridiem: is12h ? 'short' : false,
+            hour12: is12h
         },
         eventClick: function(info) { 
             if (info.event.id) showItemDetails(info.event.id); 
@@ -1637,11 +1826,13 @@ function initCalendar() {
                             
                             if (shouldRender) {
                                 let dateStr = formatLocalDate(currDate);
-                                let eventStart = dateStr + (item.startTime ? 'T' + item.startTime : '');
+                                let eventStart = dateStr + (item.startTime ? 'T' + (item.startTime.length === 5 ? item.startTime + ':00' : item.startTime) : '');
+                                let eventEnd = (isEvent && item.endTime) ? dateStr + 'T' + (item.endTime.length === 5 ? item.endTime + ':00' : item.endTime) : null;
                                 allEvents.push({ 
                                     id: item.id, 
                                     title: item.title, 
                                     start: eventStart, 
+                                    end: eventEnd,
                                     color: color, 
                                     className: className, 
                                     allDay: !item.startTime 
@@ -1649,49 +1840,42 @@ function initCalendar() {
                             }
                             currDate.setDate(currDate.getDate() + 1);
                         }
-                    } else if (isTask && item.dueDate && item.dueDate !== item.startDate) {
-                        let currDate = parseLocalDate(item.startDate);
-                        let endDateObj = parseLocalDate(item.dueDate);
-                        while (currDate <= endDateObj) {
-                            let dateStr = formatLocalDate(currDate);
-                            let eventStart = dateStr + (item.startTime ? 'T' + item.startTime : '');
-                            allEvents.push({ 
-                                id: item.id, 
-                                title: item.title, 
-                                start: eventStart, 
-                                color: color, 
-                                className: className, 
-                                allDay: !item.startTime 
-                            });
-                            currDate.setDate(currDate.getDate() + 1);
+                    } else if (isEvent) {
+                        // Events: render as a single event object with accurate start and end ISO strings (NO duplicate looping)
+                        let startStr = item.startDate + (item.startTime ? 'T' + (item.startTime.length === 5 ? item.startTime + ':00' : item.startTime) : '');
+                        let eventEndDate = item.endDate || item.startDate;
+                        let endStr = null;
+                        if (item.endTime) {
+                            endStr = eventEndDate + 'T' + (item.endTime.length === 5 ? item.endTime + ':00' : item.endTime);
+                        } else if (item.endDate && item.endDate !== item.startDate) {
+                            endStr = item.endDate;
                         }
-                    } else if (item.type === 'event' && item.endDate && item.endDate !== item.startDate) {
-                        let currDate = parseLocalDate(item.startDate);
-                        let endDateObj = parseLocalDate(item.endDate);
-                        while (currDate <= endDateObj) {
-                            let dateStr = formatLocalDate(currDate);
-                            let eventStart = dateStr + (item.startTime ? 'T' + item.startTime : '');
-                            let eventEnd = item.endTime ? dateStr + 'T' + item.endTime : null;
-                            allEvents.push({ 
-                                id: item.id, 
-                                title: item.title, 
-                                start: eventStart, 
-                                end: eventEnd, 
-                                color: color, 
-                                className: className 
-                            });
-                            currDate.setDate(currDate.getDate() + 1);
-                        }
-                    } else {
-                        let startStr = item.startDate + (item.startTime ? 'T' + item.startTime : '');
-                        let endStr = (item.type === 'event' && item.endDate) ? item.endDate + (item.endTime ? 'T' + item.endTime : '') : null;
                         allEvents.push({ 
                             id: item.id, 
                             title: item.title, 
                             start: startStr, 
                             end: endStr, 
                             color: color, 
-                            className: className 
+                            className: className,
+                            allDay: !item.startTime
+                        });
+                    } else {
+                        // Tasks & Habits without repeat
+                        let startStr = item.startDate + (item.startTime ? 'T' + (item.startTime.length === 5 ? item.startTime + ':00' : item.startTime) : '');
+                        let endStr = null;
+                        if (isTask && item.dueDate && item.dueTime) {
+                            endStr = item.dueDate + 'T' + (item.dueTime.length === 5 ? item.dueTime + ':00' : item.dueTime);
+                        } else if (isTask && item.dueDate && item.dueDate !== item.startDate) {
+                            endStr = item.dueDate;
+                        }
+                        allEvents.push({ 
+                            id: item.id, 
+                            title: item.title, 
+                            start: startStr, 
+                            end: endStr, 
+                            color: color, 
+                            className: className,
+                            allDay: !item.startTime
                         });
                     }
                 });
@@ -1719,15 +1903,16 @@ const cx = 120, cy = 120, r = 100;
 function updateTimeDisplay() {
     const clockText = document.getElementById('timer-clock');
     const progressPath = document.getElementById('timer-progress');
-    const mins = Math.floor(timeLeft / 60).toString().padStart(2, '0');
-    const secs = (timeLeft % 60).toString().padStart(2, '0');
+    const safeTime = Math.max(0, timeLeft);
+    const mins = Math.floor(safeTime / 60).toString().padStart(2, '0');
+    const secs = (safeTime % 60).toString().padStart(2, '0');
     const newText = `${mins}:${secs}`;
     if (clockText && clockText.textContent !== newText) {
         clockText.textContent = newText;
     }
     if (isRunning && progressPath) {
         const totalSecs = (isWorkSession ? sessionMinutes : Math.round(sessionMinutes / 5)) * 60;
-        const ratio = timeLeft / totalSecs;
+        const ratio = Math.max(0, Math.min(1, safeTime / totalSecs));
         const newOffset = ARC_LENGTH - (ratio * ARC_LENGTH);
         if (progressPath.style.strokeDashoffset !== `${newOffset}`) {
             progressPath.style.strokeDashoffset = newOffset;
@@ -1920,8 +2105,14 @@ function syncTimerWithTimePassed() {
                 if (progressPath) progressPath.style.stroke = 'var(--color-ticktick-blue)';
                 if (btnStart) btnStart.innerHTML = '<i class="fa-solid fa-play"></i> Start';
                 if (knob) knob.style.display = 'block';
+                playSound('pomodoro');
                 showToast('Break over! Ready to focus?', 'info');
                 localStorage.removeItem('pomodoro_expected_end');
+
+                if (typeof cancelMobileNotification === 'function') {
+                    cancelMobileNotification(888888);
+                    cancelMobileNotification(999993);
+                }
 
                 if (typeof scheduleMobileNotification === 'function') {
                     scheduleMobileNotification(
@@ -1933,7 +2124,6 @@ function syncTimerWithTimePassed() {
                         'pomodoro.mp3'
                     );
                 }
-                cancelAllPomodoroNotifications();
                 updateKnobByMinutes(sessionMinutes);
             }
         }
@@ -2026,6 +2216,617 @@ function initPomodoroDrag() {
 
     updateKnobByMinutes(25);
 }
+
+
+/* ===== js/notes.js ===== */
+let activeNoteId = null;
+let currentNotesFilter = 'all';
+let currentSearchQuery = '';
+let autoSaveTimeout = null;
+
+function initNotesUI() {
+    const createBtn = document.getElementById('create-note-btn');
+    const searchInput = document.getElementById('notes-search-input');
+    const closeEditorBtn = document.getElementById('close-note-editor');
+    const saveNoteBtn = document.getElementById('save-note-btn');
+    const deleteNoteBtn = document.getElementById('delete-note-btn');
+    const pinNoteBtn = document.getElementById('note-pin-btn');
+    const editorBody = document.getElementById('note-editor-body');
+    const titleInput = document.getElementById('note-title-input');
+    const headingSelect = document.getElementById('note-heading-select');
+
+    if (createBtn) {
+        createBtn.addEventListener('click', () => openNoteEditor(null));
+    }
+
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            currentSearchQuery = e.target.value.toLowerCase().trim();
+            renderNotesList();
+        });
+    }
+
+    if (closeEditorBtn) {
+        closeEditorBtn.addEventListener('click', () => closeNoteEditor());
+    }
+
+    if (saveNoteBtn) {
+        saveNoteBtn.addEventListener('click', () => saveCurrentNote(true));
+    }
+
+    if (deleteNoteBtn) {
+        deleteNoteBtn.addEventListener('click', () => {
+            if (!activeNoteId) {
+                closeNoteEditor();
+                return;
+            }
+            showConfirm('Are you sure you want to delete this note?', () => {
+                deleteNote(activeNoteId);
+                closeNoteEditor();
+            });
+        });
+    }
+
+    if (pinNoteBtn) {
+        pinNoteBtn.addEventListener('click', () => {
+            pinNoteBtn.classList.toggle('active');
+            triggerAutoSave();
+        });
+    }
+
+    // Auto-save on title or body input
+    if (editorBody) {
+        editorBody.addEventListener('input', () => {
+            updateWordCount();
+            triggerAutoSave();
+        });
+
+        // Listen for selection changes to highlight active formatting buttons
+        editorBody.addEventListener('keyup', updateToolbarStates);
+        editorBody.addEventListener('mouseup', updateToolbarStates);
+    }
+
+    if (titleInput) {
+        titleInput.addEventListener('input', triggerAutoSave);
+    }
+
+    // Initialize formatting toolbar buttons
+    const formatButtons = document.querySelectorAll('.note-format-btn');
+    formatButtons.forEach(btn => {
+        btn.addEventListener('mousedown', (e) => {
+            // Prevent editor body from losing focus when clicking toolbar
+            e.preventDefault();
+            const command = btn.getAttribute('data-command');
+            const value = btn.getAttribute('data-value') || null;
+            executeFormat(command, value);
+            updateToolbarStates();
+        });
+    });
+
+    if (headingSelect) {
+        headingSelect.addEventListener('change', (e) => {
+            const val = e.target.value;
+            if (val === 'p') {
+                executeFormat('formatBlock', '<p>');
+            } else if (val === 'h1' || val === 'h2' || val === 'h3') {
+                executeFormat('formatBlock', `<${val}>`);
+            }
+            if (editorBody) editorBody.focus();
+        });
+    }
+
+    // Note category filter chips in Notes page
+    const filterChips = document.querySelectorAll('.note-filter-chip');
+    filterChips.forEach(chip => {
+        chip.addEventListener('click', () => {
+            filterChips.forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            currentNotesFilter = chip.getAttribute('data-filter') || 'all';
+            renderNotesList();
+        });
+    });
+
+    window.addEventListener('flowtick-notes-changed', () => {
+        renderNotesList();
+    });
+
+    // Render initially
+    renderNotesList();
+}
+
+function executeFormat(command, value = null) {
+    const editorBody = document.getElementById('note-editor-body');
+    if (!editorBody) return;
+    editorBody.focus();
+
+    if (command === 'blockquote') {
+        // Toggle blockquote
+        const selection = window.getSelection();
+        if (selection.rangeCount > 0) {
+            const parentBlock = selection.anchorNode.parentElement?.closest('blockquote');
+            if (parentBlock) {
+                document.execCommand('formatBlock', false, '<p>');
+            } else {
+                document.execCommand('formatBlock', false, '<blockquote>');
+            }
+        }
+    } else {
+        document.execCommand(command, false, value);
+    }
+
+    triggerAutoSave();
+    updateWordCount();
+}
+
+function updateToolbarStates() {
+    const formatButtons = document.querySelectorAll('.note-format-btn');
+    formatButtons.forEach(btn => {
+        const command = btn.getAttribute('data-command');
+        if (!command || command === 'formatBlock' || command === 'removeFormat' || command === 'insertHorizontalRule') {
+            return;
+        }
+        try {
+            if (document.queryCommandState(command)) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        } catch (_) {}
+    });
+
+    // Check heading level
+    const headingSelect = document.getElementById('note-heading-select');
+    if (headingSelect) {
+        try {
+            const parent = window.getSelection()?.anchorNode?.parentElement;
+            if (parent) {
+                const tag = parent.closest('h1, h2, h3, blockquote, p')?.tagName?.toLowerCase();
+                if (tag === 'h1' || tag === 'h2' || tag === 'h3') {
+                    headingSelect.value = tag;
+                } else {
+                    headingSelect.value = 'p';
+                }
+            }
+        } catch (_) {}
+    }
+}
+
+function updateWordCount() {
+    const editorBody = document.getElementById('note-editor-body');
+    const countEl = document.getElementById('note-word-count');
+    if (!editorBody || !countEl) return;
+
+    const text = editorBody.innerText || '';
+    const charCount = text.length;
+    const wordCount = text.trim() === '' ? 0 : text.trim().split(/\s+/).length;
+
+    countEl.textContent = `${wordCount} words • ${charCount} chars`;
+}
+
+function triggerAutoSave() {
+    const statusEl = document.getElementById('note-save-status');
+    if (statusEl) {
+        statusEl.textContent = 'Unsaved changes';
+        statusEl.classList.remove('saved');
+    }
+
+    if (autoSaveTimeout) clearTimeout(autoSaveTimeout);
+    autoSaveTimeout = setTimeout(() => {
+        saveCurrentNote(false);
+    }, 1200);
+}
+
+async function renderNotesList() {
+    const container = document.getElementById('notes-grid');
+    if (!container) return;
+
+    const allNotes = await getNotesFromFirebase();
+    const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+    const currentUserId = currentUser ? currentUser.id : 'guest';
+
+    let userNotes = allNotes.filter(n => n.userId === currentUserId);
+
+    // Apply category filter
+    if (currentNotesFilter !== 'all') {
+        userNotes = userNotes.filter(n => (n.category || 'General').toLowerCase() === currentNotesFilter.toLowerCase());
+    }
+
+    // Apply search query
+    if (currentSearchQuery) {
+        userNotes = userNotes.filter(n => {
+            const titleMatch = (n.title || '').toLowerCase().includes(currentSearchQuery);
+            const contentMatch = (n.plainText || '').toLowerCase().includes(currentSearchQuery);
+            return titleMatch || contentMatch;
+        });
+    }
+
+    // Sort: Pinned first, then newest updated
+    userNotes.sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        return (b.updatedAt || 0) - (a.updatedAt || 0);
+    });
+
+    if (userNotes.length === 0) {
+        container.innerHTML = `
+            <div class="empty-notes-state" style="grid-column: 1 / -1; text-align: center; padding: 48px 20px; color: var(--text-muted);">
+                <div style="font-size: 42px; margin-bottom: 12px; color: var(--color-ticktick-blue); opacity: 0.6;">
+                    <i class="fa-regular fa-note-sticky"></i>
+                </div>
+                <h4 style="font-size: 17px; font-weight: 600; color: var(--text-main); margin-bottom: 6px;">No Notes Found</h4>
+                <p style="font-size: 13.5px; max-width: 320px; margin: 0 auto 16px auto;">
+                    ${currentSearchQuery ? 'No notes matched your search query.' : 'Capture your thoughts, ideas, plans, and documentation in rich formatted notes.'}
+                </p>
+                <button onclick="window.openNoteEditor(null)" class="btn btn-primary" style="margin: 0 auto; display: inline-flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-plus"></i> Create Note
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = userNotes.map(note => {
+        const catMeta = getCategoryMeta(note.category || 'General');
+        const updatedDateStr = formatNoteDate(note.updatedAt || note.createdAt);
+        const preview = note.plainText ? escapeHTML(note.plainText.slice(0, 140)) + (note.plainText.length > 140 ? '...' : '') : '<span style="font-style: italic; opacity: 0.6;">Empty note</span>';
+
+        return `
+            <div class="note-card ${note.isPinned ? 'pinned' : ''}" onclick="window.openNoteEditor('${note.id}')">
+                <div class="note-card-header">
+                    <span class="note-category-pill" style="color: ${catMeta.color}; background: ${catMeta.bg};">
+                        <i class="fa-solid ${catMeta.icon}"></i> ${escapeHTML(note.category || 'General')}
+                    </span>
+                    <div class="note-card-actions" onclick="event.stopPropagation();">
+                        <button class="btn-icon note-pin-toggle ${note.isPinned ? 'active' : ''}" onclick="window.togglePinNote('${note.id}')" title="${note.isPinned ? 'Unpin Note' : 'Pin Note'}">
+                            <i class="fa-solid fa-thumbtack"></i>
+                        </button>
+                        <button class="btn-icon note-delete-btn" onclick="window.confirmDeleteNote('${note.id}')" title="Delete Note">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <h4 class="note-card-title">${escapeHTML(note.title || 'Untitled Note')}</h4>
+                <div class="note-card-preview">${preview}</div>
+                <div class="note-card-footer">
+                    <span class="note-card-date"><i class="fa-regular fa-clock"></i> ${updatedDateStr}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function openNoteEditor(noteId) {
+    activeNoteId = noteId;
+    const modal = document.getElementById('note-editor-modal');
+    const titleInput = document.getElementById('note-title-input');
+    const editorBody = document.getElementById('note-editor-body');
+    const categorySelect = document.getElementById('note-category-select');
+    const pinBtn = document.getElementById('note-pin-btn');
+    const statusEl = document.getElementById('note-save-status');
+
+    if (!modal) return;
+
+    if (noteId) {
+        const allNotes = await getNotesFromFirebase();
+        const note = allNotes.find(n => String(n.id) === String(noteId));
+        if (note) {
+            titleInput.value = note.title || '';
+            editorBody.innerHTML = note.content || '';
+            if (categorySelect) categorySelect.value = note.category || 'Work';
+            if (pinBtn) {
+                if (note.isPinned) pinBtn.classList.add('active');
+                else pinBtn.classList.remove('active');
+            }
+        }
+    } else {
+        // New note
+        titleInput.value = '';
+        editorBody.innerHTML = '';
+        if (categorySelect) categorySelect.value = 'Work';
+        if (pinBtn) pinBtn.classList.remove('active');
+    }
+
+    if (statusEl) {
+        statusEl.textContent = 'Saved';
+        statusEl.classList.add('saved');
+    }
+
+    updateWordCount();
+    modal.classList.add('active');
+    setTimeout(() => {
+        if (!titleInput.value) titleInput.focus();
+        else editorBody.focus();
+    }, 150);
+}
+
+function closeNoteEditor() {
+    if (autoSaveTimeout) {
+        clearTimeout(autoSaveTimeout);
+        autoSaveTimeout = null;
+    }
+    const modal = document.getElementById('note-editor-modal');
+    if (modal) modal.classList.remove('active');
+    activeNoteId = null;
+    renderNotesList();
+}
+
+async function saveCurrentNote(showFeedback = false) {
+    const titleInput = document.getElementById('note-title-input');
+    const editorBody = document.getElementById('note-editor-body');
+    const categorySelect = document.getElementById('note-category-select');
+    const pinBtn = document.getElementById('note-pin-btn');
+    const statusEl = document.getElementById('note-save-status');
+
+    if (!titleInput || !editorBody) return;
+
+    const title = titleInput.value.trim();
+    const content = editorBody.innerHTML.trim();
+    const plainText = editorBody.innerText.trim();
+
+    // If completely empty and new, do not save
+    if (!title && !plainText && !activeNoteId) {
+        return;
+    }
+
+    const category = categorySelect ? categorySelect.value : 'Work';
+    const isPinned = pinBtn ? pinBtn.classList.contains('active') : false;
+
+    const noteObj = {
+        id: activeNoteId,
+        title: title || 'Untitled Note',
+        content: content,
+        plainText: plainText,
+        category: category,
+        isPinned: isPinned
+    };
+
+    const saved = await saveNoteToFirebase(noteObj);
+    activeNoteId = saved.id;
+
+    if (statusEl) {
+        statusEl.textContent = 'Saved';
+        statusEl.classList.add('saved');
+    }
+
+    if (showFeedback) {
+        showToast('Note saved successfully!', 'success', false);
+    }
+}
+
+async function deleteNote(noteId) {
+    await deleteNoteFromFirebase(noteId);
+    showToast('Note deleted', 'info', false);
+    renderNotesList();
+}
+
+async function togglePinNote(noteId) {
+    const allNotes = await getNotesFromFirebase();
+    const note = allNotes.find(n => String(n.id) === String(noteId));
+    if (note) {
+        note.isPinned = !note.isPinned;
+        await saveNoteToFirebase(note);
+        renderNotesList();
+    }
+}
+
+function confirmDeleteNote(noteId) {
+    showConfirm('Delete this note permanently?', () => {
+        deleteNote(noteId);
+    });
+}
+
+function formatNoteDate(timestamp) {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    
+    const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (isToday) return `Today at ${timeStr}`;
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (date.toDateString() === yesterday.toDateString()) {
+        return `Yesterday at ${timeStr}`;
+    }
+
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
+}
+
+function escapeHTML(str) {
+    if (!str) return '';
+    return str.replace(/[&<>'"]/g, tag => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        "'": '&#39;',
+        '"': '&quot;'
+    }[tag] || tag));
+}
+
+// Window attachments for inline onclicks
+window.openNoteEditor = openNoteEditor;
+window.closeNoteEditor = closeNoteEditor;
+window.togglePinNote = togglePinNote;
+window.confirmDeleteNote = confirmDeleteNote;
+
+
+/* ===== js/updates.js ===== */
+const GITHUB_REPO_OWNER = 'mohammed-osama187';
+const GITHUB_REPO_NAME = 'Personal-Information-Manager';
+const DEFAULT_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/releases/latest/download/app-release.apk`;
+const REMOTE_VERSION_URL = `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/main/version.json`;
+
+function initAppUpdates() {
+    const isNative = isNativePlatform();
+
+    // 1. Manage Web-only APK download buttons visibility
+    const webDownloadElements = document.querySelectorAll('.web-only-download');
+    if (!isNative) {
+        webDownloadElements.forEach(el => {
+            el.style.display = '';
+        });
+        // Set dynamic download link
+        const sidebarLink = document.getElementById('sidebar-download-link');
+        const settingsLink = document.getElementById('settings-download-link');
+        if (sidebarLink) sidebarLink.href = DEFAULT_DOWNLOAD_URL;
+        if (settingsLink) settingsLink.href = DEFAULT_DOWNLOAD_URL;
+    } else {
+        webDownloadElements.forEach(el => {
+            el.style.display = 'none';
+        });
+    }
+
+    // 2. Settings "Check for Updates" button
+    const checkUpdatesBtn = document.getElementById('check-updates-btn');
+    if (checkUpdatesBtn) {
+        checkUpdatesBtn.addEventListener('click', () => {
+            checkAppUpdate(true);
+        });
+    }
+
+    // Update current version text in settings
+    updateSettingsVersionDisplay();
+
+    // 3. Modal action buttons
+    const updateCancelBtn = document.getElementById('update-cancel-btn');
+    const updateModal = document.getElementById('update-modal');
+    if (updateCancelBtn && updateModal) {
+        updateCancelBtn.addEventListener('click', () => {
+            updateModal.classList.remove('active');
+        });
+    }
+
+    // 4. If native mobile app, automatically check for updates on startup
+    if (isNative) {
+        setTimeout(() => {
+            checkAppUpdate(false);
+        }, 2000);
+    }
+}
+
+function isNativePlatform() {
+    return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+}
+
+async function getCurrentAppInfo() {
+    try {
+        if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+            const info = await window.Capacitor.Plugins.App.getInfo();
+            return {
+                versionCode: parseInt(info.build, 10) || 1,
+                versionName: info.version || '1.0.0'
+            };
+        }
+    } catch (e) {
+        console.warn('[Updates] Failed to get native App info:', e);
+    }
+    return {
+        versionCode: 1,
+        versionName: '1.0.0'
+    };
+}
+
+async function updateSettingsVersionDisplay() {
+    const versionTextEl = document.getElementById('app-current-version-text');
+    if (!versionTextEl) return;
+    const appInfo = await getCurrentAppInfo();
+    const platformLabel = isNativePlatform() ? 'Android App' : 'Web App';
+    versionTextEl.textContent = `${platformLabel} • v${appInfo.versionName} (Build ${appInfo.versionCode})`;
+}
+
+async function checkAppUpdate(isManual = false) {
+    const checkUpdatesBtn = document.getElementById('check-updates-btn');
+    if (checkUpdatesBtn && isManual) {
+        checkUpdatesBtn.disabled = true;
+        checkUpdatesBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Checking...';
+    }
+
+    try {
+        const appInfo = await getCurrentAppInfo();
+        const currentBuild = appInfo.versionCode;
+
+        // Try remote URL first, then fallback to local version.json
+        let latest = null;
+        try {
+            const remoteRes = await fetch(`${REMOTE_VERSION_URL}?cache_bust=${Date.now()}`);
+            if (remoteRes.ok) {
+                latest = await remoteRes.json();
+            }
+        } catch (_) {}
+
+        if (!latest) {
+            const localRes = await fetch(`./version.json?cache_bust=${Date.now()}`);
+            if (localRes.ok) {
+                latest = await localRes.json();
+            }
+        }
+
+        if (!latest) {
+            if (isManual) {
+                showToast('Unable to check for updates. Check internet connection.', 'error');
+            }
+            return;
+        }
+
+        const remoteBuild = parseInt(latest.versionCode, 10) || 1;
+
+        if (remoteBuild > currentBuild) {
+            showUpdateModal(latest);
+        } else {
+            if (isManual) {
+                showToast(`You are on the latest version (v${appInfo.versionName})`, 'success');
+            }
+        }
+    } catch (error) {
+        console.error('[Updates] Update check failed:', error);
+        if (isManual) {
+            showToast('Update check failed. Please try again.', 'error');
+        }
+    } finally {
+        if (checkUpdatesBtn && isManual) {
+            checkUpdatesBtn.disabled = false;
+            checkUpdatesBtn.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i> Check for Updates';
+        }
+    }
+}
+
+function showUpdateModal(latest) {
+    const modal = document.getElementById('update-modal');
+    const versionBadge = document.getElementById('update-version-badge');
+    const notesEl = document.getElementById('update-release-notes');
+    const confirmBtn = document.getElementById('update-confirm-btn');
+
+    if (!modal) return;
+
+    if (versionBadge) {
+        versionBadge.textContent = `v${latest.versionName || '1.1.0'}`;
+    }
+
+    if (notesEl) {
+        notesEl.textContent = latest.releaseNotes || 'Bug fixes and performance improvements.';
+    }
+
+    if (confirmBtn) {
+        confirmBtn.onclick = async () => {
+            const downloadUrl = latest.downloadUrl || DEFAULT_DOWNLOAD_URL;
+            try {
+                if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
+                    await window.Capacitor.Plugins.Browser.open({ url: downloadUrl });
+                } else {
+                    window.open(downloadUrl, '_blank');
+                }
+            } catch (e) {
+                window.open(downloadUrl, '_blank');
+            }
+            modal.classList.remove('active');
+        };
+    }
+
+    modal.classList.add('active');
+}
+
+window.checkAppUpdate = checkAppUpdate;
 
 
 /* ===== js/ui.js ===== */
@@ -2557,6 +3358,32 @@ function removeTempSubtask(idx) {
 
 window.removeTempSubtask = removeTempSubtask;
 
+let tempHabitTimers = [];
+
+function renderHabitTimersList() {
+    const listEl = document.getElementById('habit-timers-list');
+    if (!listEl) return;
+    if (tempHabitTimers.length === 0) {
+        listEl.innerHTML = '<span style="font-size: 12.5px; color: var(--text-muted); font-style: italic;">No specific timers added. Uses Start Time if set.</span>';
+        return;
+    }
+    listEl.innerHTML = tempHabitTimers.map((t, idx) => `
+        <div class="habit-timer-chip">
+            <i class="fa-regular fa-clock" style="font-size: 11px; color: var(--color-ticktick-blue);"></i>
+            <span>${formatTaskTimeDisplay(t)}</span>
+            <span class="habit-timer-chip-delete" onclick="removeHabitTimer(${idx})" title="Remove timer">
+                <i class="fa-solid fa-xmark"></i>
+            </span>
+        </div>
+    `).join('');
+}
+
+function removeHabitTimer(idx) {
+    tempHabitTimers.splice(idx, 1);
+    renderHabitTimersList();
+}
+window.removeHabitTimer = removeHabitTimer;
+
 function initModalLogic() {
     const modal = document.getElementById('task-modal');
     const openBtns = document.querySelectorAll('.open-modal-btn');
@@ -2566,8 +3393,30 @@ function initModalLogic() {
     const modalDelBtn = document.getElementById('modal-delete-btn');
     const addSubBtn = document.getElementById('add-subtask-btn');
     const subInput = document.getElementById('subtask-input');
+    const habitAddTimerBtn = document.getElementById('habit-add-timer-btn');
+    const habitTimerInput = document.getElementById('habit-new-timer-input');
 
     if (!modal) return;
+
+    if (habitAddTimerBtn && habitTimerInput) {
+        habitAddTimerBtn.addEventListener('click', () => {
+            const val = habitTimerInput.value;
+            if (val) {
+                if (!tempHabitTimers.includes(val)) {
+                    tempHabitTimers.push(val);
+                    tempHabitTimers.sort();
+                    renderHabitTimersList();
+                }
+                habitTimerInput.value = '';
+            }
+        });
+        habitTimerInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                habitAddTimerBtn.click();
+            }
+        });
+    }
 
     if (addSubBtn && subInput) {
         addSubBtn.addEventListener('click', () => {
@@ -2581,6 +3430,19 @@ function initModalLogic() {
             if (e.key === 'Enter') { e.preventDefault(); addSubBtn.click(); }
         });
     }
+
+    // Task category filter bar chips
+    const categoryChips = document.querySelectorAll('.btn-category-chip');
+    categoryChips.forEach(chip => {
+        chip.addEventListener('click', () => {
+            categoryChips.forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            window.currentCategoryFilter = chip.getAttribute('data-category') || 'all';
+            if (typeof window.sortAndRenderDashboard === 'function') {
+                window.sortAndRenderDashboard();
+            }
+        });
+    });
 
     openBtns.forEach(btn => {
         btn.addEventListener('click', () => {
@@ -2597,6 +3459,10 @@ function initModalLogic() {
 
             if (window.customPrioritySelect) {
                 window.customPrioritySelect.setValue('medium', '<i class="fa-solid fa-flag" style="color: #FFA940;"></i> Medium');
+            }
+            if (window.customCategorySelect) {
+                const meta = getCategoryMeta('Work');
+                window.customCategorySelect.setValue('Work', `<span class="cat-dot" style="background:${meta.color};"></span> Work`);
             }
             if (window.customFrequencySelect) {
                 window.customFrequencySelect.setValue('none', 'No Repeat');
@@ -2746,9 +3612,15 @@ function openModalUI(type) {
         eventOnlyElements.forEach(el => el.style.display = 'none');
         taskOnlyElements.forEach(el => el.style.display = 'none');
         
+        const habitOnlyElements = document.querySelectorAll('.id-habit-only');
+        habitOnlyElements.forEach(el => el.style.display = 'block');
+
         if (window.customFrequencySelect && window.customFrequencySelect.getValue() === 'none') {
             window.customFrequencySelect.setValue('daily', 'Daily');
         }
+    } else {
+        const habitOnlyElements = document.querySelectorAll('.id-habit-only');
+        habitOnlyElements.forEach(el => el.style.display = 'none');
     }
     modal.classList.add('active');
 }
@@ -2816,7 +3688,24 @@ function editItem(id) {
             document.getElementById('times-per-day').value = item.timesPerDay || 1;
         }
 
+        if (item.type === 'habit') {
+            tempHabitTimers = Array.isArray(item.reminderTimes) && item.reminderTimes.length > 0
+                ? [...item.reminderTimes]
+                : (item.startTime ? [item.startTime] : []);
+            renderHabitTimersList();
+            const habitTimesInput = document.getElementById('habit-times-per-day');
+            if (habitTimesInput) habitTimesInput.value = item.timesPerDay || 1;
+        }
+
         if (item.type === 'task') {
+            const cat = item.category || 'Work';
+            const catInput = document.getElementById('task-category');
+            if (catInput) catInput.value = cat;
+            if (window.customCategorySelect) {
+                const meta = getCategoryMeta(cat);
+                window.customCategorySelect.setValue(cat, `<span class="cat-dot" style="background:${meta.color};"></span> ${meta.name}`);
+            }
+
             if (item.dueDate) document.getElementById('task-due-date').value = item.dueDate;
             if (window.timePickerDue) {
                 window.timePickerDue.setValue24h(item.dueTime || '');
@@ -2935,6 +3824,7 @@ function initFormSubmit(modal) {
             dataItem.dueDate = dueDate || null;
             dataItem.dueTime = dueTime || null;
             dataItem.priority = window.customPrioritySelect ? window.customPrioritySelect.getValue() : 'medium';
+            dataItem.category = window.customCategorySelect ? window.customCategorySelect.getValue() : (document.getElementById('task-category')?.value || 'Work');
             dataItem.subtasks = [...tempSubtasks]; 
         } else if (type === 'event') {
             const eventEndChoice = document.querySelector('input[name="event-end-choice"]:checked').value;
@@ -2989,6 +3879,12 @@ function initFormSubmit(modal) {
             dataItem.priority = 'medium'; 
         } else if (type === 'habit') {
             dataItem.priority = 'medium';
+            const habitTimesVal = parseInt(document.getElementById('habit-times-per-day').value, 10) || 1;
+            dataItem.timesPerDay = Math.max(1, habitTimesVal);
+            dataItem.reminderTimes = [...tempHabitTimers];
+            if (tempHabitTimers.length > 0) {
+                dataItem.startTime = tempHabitTimers[0];
+            }
         }
 
         getTasksFromFirebase().then(allItems => {
@@ -2996,6 +3892,9 @@ function initFormSubmit(modal) {
             if (originalItem) {
                 if (originalItem.completedDates) {
                     dataItem.completedDates = originalItem.completedDates;
+                }
+                if (originalItem.dailyProgress) {
+                    dataItem.dailyProgress = originalItem.dailyProgress;
                 }
                 if (originalItem.createdAt) {
                     dataItem.createdAt = originalItem.createdAt;
@@ -3132,6 +4031,9 @@ function renderTaskCard(item, { isHistory = false, showHabitCalendar = true, sho
     }
 
     let timeInfo = item.startTime ? ` <i class="fa-regular fa-clock"></i> ${formatTaskTimeDisplay(item.startTime)}` : '';
+    if (item.type === 'habit' && item.reminderTimes && item.reminderTimes.length > 0) {
+        timeInfo = ` <i class="fa-regular fa-bell"></i> ${item.reminderTimes.map(t => formatTaskTimeDisplay(t)).join(', ')}`;
+    }
     let freqText = '';
     
     if (item.frequency && item.frequency !== 'none') {
@@ -3141,9 +4043,10 @@ function renderTaskCard(item, { isHistory = false, showHabitCalendar = true, sho
     }
     
     let progressBadge = '';
-    if (item.timesPerDay > 1 && !item.isCompleted && !item.isCancelled && !item.isDeleted) {
+    if (item.timesPerDay > 1 && !item.isCancelled && !item.isDeleted) {
         let count = item.completedCount || 0;
-        progressBadge = `<span class="progress-badge">${count}/${item.timesPerDay}</span>`;
+        if (item.isCompleted) count = item.timesPerDay;
+        progressBadge = `<span class="progress-badge ${item.isCompleted ? 'completed' : ''}">${count}/${item.timesPerDay}</span>`;
     }
 
     if (item.isCancelled) {
@@ -3155,6 +4058,12 @@ function renderTaskCard(item, { isHistory = false, showHabitCalendar = true, sho
     }
 
     let flagIcon = '';
+    let categoryBadgeHTML = '';
+    if (item.type === 'task' || !item.type) {
+        const cat = item.category || 'Work';
+        const catMeta = getCategoryMeta(cat);
+        categoryBadgeHTML = `<span class="task-category-pill" style="border: 1px solid ${catMeta.color}35; background:${catMeta.bg}; color:${catMeta.color};"><span class="cat-dot" style="background:${catMeta.color};"></span>${catMeta.name}</span>`;
+    }
     if (item.type === 'task') {
         if (item.priority === 'high') flagIcon = ' <i class="fa-solid fa-flag" style="color: #FF4D4F; font-size: 13px;"></i>';
         else if (item.priority === 'medium') flagIcon = ' <i class="fa-solid fa-flag" style="color: #FFA940; font-size: 13px;"></i>';
@@ -3217,7 +4126,10 @@ function renderTaskCard(item, { isHistory = false, showHabitCalendar = true, sho
             } else {
                 const isChecked = item.completedDates && item.completedDates.includes(dayDateStr);
                 const isSkipped = item.skippedDates && item.skippedDates.includes(dayDateStr);
-                if (isChecked) {
+                const dayProgress = (item.dailyProgress && item.dailyProgress[dayDateStr]) || 0;
+                const target = item.timesPerDay || 1;
+
+                if (isChecked || (dayProgress >= target && target > 0)) {
                     dayClass += ' checked';
                     dayContent = '<i class="fa-solid fa-check"></i>';
                 } else if (isSkipped) {
@@ -3225,7 +4137,7 @@ function renderTaskCard(item, { isHistory = false, showHabitCalendar = true, sho
                     dayContent = '<i class="fa-solid fa-ban"></i>';
                 } else if (isToday && isScheduled) {
                     dayClass += ' today-scheduled';
-                    dayContent = `${d}`;
+                    dayContent = target > 1 && dayProgress > 0 ? `${dayProgress}/${target}` : `${d}`;
                 } else {
                     dayClass += ' unchecked';
                     dayContent = '<i class="fa-solid fa-xmark"></i>';
@@ -3336,23 +4248,33 @@ function renderTaskCard(item, { isHistory = false, showHabitCalendar = true, sho
         dueInfo = ` <span style="font-size:11px; color:#FF4D4F; margin-left: 8px; font-weight: 500;"><i class="fa-regular fa-calendar-xmark"></i> Due: ${item.dueDate}${item.dueTime ? ' ' + formatTaskTimeDisplay(item.dueTime) : ''}</span>`;
     }
 
+    const isSwipeable = !isHistory && !item.isCompleted && !item.isCancelled && !item.isDeleted;
+    const canCancel = isSwipeable && item.type !== 'habit';
+
     return `
-        <div class="task-wrapper type-${item.type}" onclick="showItemDetails('${item.id}')">
-            <div class="task-item ${itemClass}" style="border-left-color: ${getColor(item.priority)}; border-left-width: 0;">
-                <div class="task-info-simple">
-                    <span onclick="event.stopPropagation();">${checkboxHTML}</span>
-                    <h4 class="task-item-title">
-                        ${typeBadgeHTML}${item.title} ${flagIcon} ${progressBadge}
-                        <span style="font-size:12px; color:var(--text-muted); font-weight:normal;">${timeInfo} ${freqText}</span>
-                        ${dueInfo}
-                    </h4>
-                </div>
-                <div class="task-actions" onclick="event.stopPropagation();">
-                    <div class="task-actions-desktop">${actionButtons}</div>
-                    <div class="task-menu-container">
-                        <button class="btn-menu" onclick="toggleTaskDropdown(event, '${item.id}')"><i class="fa-solid fa-ellipsis-vertical"></i></button>
-                        <div class="task-dropdown" id="dropdown-${item.id}">
-                            ${dropdownItems}
+        <div class="task-wrapper type-${item.type}" data-task-id="${item.id}" onclick="showItemDetails('${item.id}')">
+            <div class="task-swipe-wrapper ${isSwipeable ? 'swipeable-task' : ''}" data-task-id="${item.id}" data-can-cancel="${canCancel ? 'true' : 'false'}">
+                ${isSwipeable ? `
+                <div class="task-swipe-track">
+                    <div class="task-swipe-action task-swipe-action-done"><i class="fa-solid fa-check"></i> <span>Done</span></div>
+                    ${canCancel ? `<div class="task-swipe-action task-swipe-action-wontdo"><span>Won't Do</span> <i class="fa-solid fa-ban"></i></div>` : `<div class="task-swipe-action"></div>`}
+                </div>` : ''}
+                <div class="task-item ${itemClass}" style="border-left-color: ${getColor(item.priority)}; border-left-width: 0;">
+                    <div class="task-info-simple">
+                        <span onclick="event.stopPropagation();">${checkboxHTML}</span>
+                        <h4 class="task-item-title">
+                            ${typeBadgeHTML}${item.title} ${categoryBadgeHTML} ${flagIcon} ${progressBadge}
+                            <span style="font-size:12px; color:var(--text-muted); font-weight:normal;">${timeInfo} ${freqText}</span>
+                            ${dueInfo}
+                        </h4>
+                    </div>
+                    <div class="task-actions" onclick="event.stopPropagation();">
+                        <div class="task-actions-desktop">${actionButtons}</div>
+                        <div class="task-menu-container">
+                            <button class="btn-menu" onclick="toggleTaskDropdown(event, '${item.id}')"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+                            <div class="task-dropdown" id="dropdown-${item.id}">
+                                ${dropdownItems}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -3393,7 +4315,14 @@ function displayTasks() {
         window.allActiveItemsList = items.filter(t => (!t.isCompleted || t.type === 'habit' || (t.frequency && t.frequency !== 'none')) && !t.isCancelled && !t.isDeleted);
 
         habits.forEach(h => {
-            h.isCompleted = !!(h.completedDates && h.completedDates.includes(todayStr));
+            const target = h.timesPerDay || 1;
+            if (!h.dailyProgress) h.dailyProgress = {};
+            if (h.completedDates && h.completedDates.includes(todayStr) && (h.dailyProgress[todayStr] === undefined)) {
+                h.dailyProgress[todayStr] = target;
+            }
+            const todayCount = h.dailyProgress[todayStr] || 0;
+            h.completedCount = todayCount;
+            h.isCompleted = todayCount >= target;
         });
         const activeHabits = habits.sort((a, b) => b.createdAt - a.createdAt);
         const historyItems = items.filter(t => (t.isCompleted || t.isCancelled || t.isDeleted) && (t.type !== 'habit' || t.isDeleted)).sort((a, b) => b.createdAt - a.createdAt);
@@ -3498,7 +4427,7 @@ function sortAndRenderDashboard() {
     if (!container) return;
 
     const now = new Date();
-    let fingerprint = `${window.currentTaskFilter || 'all'}:${window.currentTaskSort || 'default'}:${window.customFilterStartDate || ''}:${window.customFilterEndDate || ''}|`;
+    let fingerprint = `${window.currentTaskFilter || 'all'}:${window.currentCategoryFilter || 'all'}:${window.currentTaskSort || 'default'}:${window.customFilterStartDate || ''}:${window.customFilterEndDate || ''}|`;
     (window.activeTasksList || []).forEach(item => {
         let startInstant = item.startDate ? parseLocalISOString(item.startDate, item.startTime || '00:00') : now;
         let dueInstant = item.dueDate ? parseLocalISOString(item.dueDate, item.dueTime || '23:59') : null;
@@ -3578,6 +4507,14 @@ function sortAndRenderDashboard() {
                 return taskStart <= window.customFilterEndDate && taskEnd >= window.customFilterStartDate;
             }
             return true;
+        });
+    }
+
+    const categoryVal = window.currentCategoryFilter || 'all';
+    if (categoryVal !== 'all') {
+        filteredTasks = filteredTasks.filter(item => {
+            const itemCat = item.category || 'Work';
+            return itemCat.toLowerCase() === categoryVal.toLowerCase();
         });
     }
 
@@ -3870,17 +4807,36 @@ function toggleItemComplete(id, currentStatus) {
         const hasRepeat = item.frequency && item.frequency !== 'none';
 
         if (item.type === 'habit') {
+            const target = item.timesPerDay || 1;
+            if (!item.dailyProgress) item.dailyProgress = {};
             if (!item.completedDates) item.completedDates = [];
-            const idx = item.completedDates.indexOf(todayStr);
-            if (idx > -1) {
-                item.completedDates.splice(idx, 1);
+
+            if (currentStatus) {
+                // If already completed today, toggle resets progress for today
+                item.dailyProgress[todayStr] = 0;
+                item.completedDates = item.completedDates.filter(d => d !== todayStr);
                 item.isCompleted = false;
                 item.completedCount = 0;
             } else {
-                item.completedDates.push(todayStr);
-                item.isCompleted = true;
-                item.completedCount = 1;
-                showToast('Awesome! Marked as complete.', 'success', true);
+                let currentCount = item.dailyProgress[todayStr] || 0;
+                currentCount += 1;
+                item.dailyProgress[todayStr] = currentCount;
+                item.completedCount = currentCount;
+
+                if (currentCount >= target) {
+                    item.isCompleted = true;
+                    if (!item.completedDates.includes(todayStr)) {
+                        item.completedDates.push(todayStr);
+                    }
+                    if (item.skippedDates) {
+                        item.skippedDates = item.skippedDates.filter(d => d !== todayStr);
+                    }
+                    showToast('Awesome! Marked as complete.', 'success', true);
+                } else {
+                    item.isCompleted = false;
+                    playSound('check');
+                    showToast(`Good job! ${currentCount}/${target} completed.`, 'info', false);
+                }
             }
         } else if (hasRepeat) {
             if (!item.completedDates) item.completedDates = [];
@@ -3985,24 +4941,29 @@ function toggleHabitDay(event, id, dateStr) {
         
         if (!item.completedDates) item.completedDates = [];
         if (!item.skippedDates) item.skippedDates = [];
+        if (!item.dailyProgress) item.dailyProgress = {};
+        const target = item.timesPerDay || 1;
         
         const doneIdx = item.completedDates.indexOf(dateStr);
         const skippedIdx = item.skippedDates.indexOf(dateStr);
         
         if (doneIdx === -1 && skippedIdx === -1) {
             item.completedDates.push(dateStr);
+            item.dailyProgress[dateStr] = target;
             playSound('check');
         } else if (doneIdx > -1) {
             item.completedDates.splice(doneIdx, 1);
             item.skippedDates.push(dateStr);
+            delete item.dailyProgress[dateStr];
         } else if (skippedIdx > -1) {
             item.skippedDates.splice(skippedIdx, 1);
+            delete item.dailyProgress[dateStr];
         }
         
         const todayStr = getTodayStr();
-        
-        item.isCompleted = item.completedDates.includes(todayStr);
-        item.completedCount = item.isCompleted ? 1 : 0;
+        const todayCount = (item.dailyProgress && item.dailyProgress[todayStr]) || (item.completedDates.includes(todayStr) ? target : 0);
+        item.completedCount = todayCount;
+        item.isCompleted = todayCount >= target;
         
         saveTaskToFirebase(item).then(() => {
             displayTasks();
@@ -4031,6 +4992,7 @@ window.toggleSubtask = toggleSubtask;
 // global function from utils.js which is bundled first.
 
 function showItemDetails(id) {
+    if (window._justSwipedTaskId) return;
     getTasksFromFirebase().then(tasks => {
         const item = tasks.find(t => String(t.id) === String(id));
         if (!item) return;
@@ -4078,6 +5040,25 @@ function showItemDetails(id) {
                     ` : ''}
                 </div>
             `;
+            if (item.type === 'habit') {
+                if (item.timesPerDay && item.timesPerDay > 1) {
+                    scheduleHTML += `
+                        <div class="details-block" style="margin-top: 12px;">
+                            <span class="details-block-label">Daily Goal</span>
+                            <span class="details-block-value"><i class="fa-solid fa-repeat"></i> ${item.timesPerDay} times per day</span>
+                        </div>
+                    `;
+                }
+                if (item.reminderTimes && item.reminderTimes.length > 0) {
+                    const timesStr = item.reminderTimes.map(t => formatTime12h(t)).join(', ');
+                    scheduleHTML += `
+                        <div class="details-block" style="margin-top: 12px;">
+                            <span class="details-block-label">Reminder Timers</span>
+                            <span class="details-block-value"><i class="fa-regular fa-bell"></i> ${timesStr}</span>
+                        </div>
+                    `;
+                }
+            }
         }
 
         let descHTML = '';
@@ -4133,10 +5114,18 @@ function showItemDetails(id) {
             `;
         }
 
+        let categoryBadgeDetails = '';
+        if (item.type === 'task' || !item.type) {
+            const cat = item.category || 'Work';
+            const catMeta = getCategoryMeta(cat);
+            categoryBadgeDetails = `<span class="task-category-pill" style="border: 1px solid ${catMeta.color}35; background:${catMeta.bg}; color:${catMeta.color}; padding: 4px 10px; border-radius: 12px; font-size:12px; font-weight:600;"><span class="cat-dot" style="background:${catMeta.color};"></span>${catMeta.name}</span>`;
+        }
+
         bodyEl.innerHTML = `
             <div class="details-meta-row">
                 <span class="details-badge ${typeLabel}">${typeLabel}</span>
                 ${item.type === 'task' ? `<span class="details-priority">${priorityFlag}</span>` : ''}
+                ${categoryBadgeDetails}
                 ${item.isCompleted ? `<span class="badge-completed" style="background: rgba(115,209,61,0.15); color: #73D13D; padding: 4px 10px; border-radius: 12px; font-size:12px; font-weight:600;">Completed</span>` : ''}
                 ${item.isCancelled ? `<span class="badge-cancelled" style="background: rgba(255,77,79,0.15); color: #FF4D4F; padding: 4px 10px; border-radius: 12px; font-size:12px; font-weight:600;">Cancelled</span>` : ''}
             </div>
@@ -4274,6 +5263,8 @@ function skipHabitInDetails(id) {
         const todayStr = getTodayStr();
         if (!item.skippedDates) item.skippedDates = [];
         if (!item.completedDates) item.completedDates = [];
+        if (!item.dailyProgress) item.dailyProgress = {};
+        const target = item.timesPerDay || 1;
         
         const skippedIdx = item.skippedDates.indexOf(todayStr);
         const completedIdx = item.completedDates.indexOf(todayStr);
@@ -4285,10 +5276,12 @@ function skipHabitInDetails(id) {
             if (completedIdx > -1) {
                 item.completedDates.splice(completedIdx, 1);
             }
+            delete item.dailyProgress[todayStr];
         }
         
-        item.isCompleted = item.completedDates.includes(todayStr);
-        item.completedCount = item.isCompleted ? 1 : 0;
+        const todayCount = (item.dailyProgress && item.dailyProgress[todayStr]) || (item.completedDates.includes(todayStr) ? target : 0);
+        item.completedCount = todayCount;
+        item.isCompleted = todayCount >= target;
         
         saveTaskToFirebase(item).then(() => {
             displayTasks();
@@ -4497,6 +5490,172 @@ window.addEventListener('flowtick-data-changed', () => {
     displayTasks();
 });
 
+function cancelTaskByGesture(id) {
+    getTasksFromFirebase().then(tasks => {
+        const item = tasks.find(t => String(t.id) === String(id));
+        if (item) {
+            item.isCancelled = true;
+            item.isCompleted = false;
+            saveTaskToFirebase(item).then(() => {
+                if (scheduleItemNotifications) {
+                    scheduleItemNotifications(item);
+                }
+                playSound('check');
+                showToast("Task marked as Won't Do", 'info', false);
+                displayTasks();
+                if (window.calendarInstance) window.calendarInstance.refetchEvents();
+            });
+        }
+    });
+}
+window.cancelTaskByGesture = cancelTaskByGesture;
+
+function initTaskSwipeGestures() {
+    let startX = 0;
+    let startY = 0;
+    let isTracking = false;
+    let isSwiping = false;
+    let currentWrapper = null;
+    let currentItemEl = null;
+    let doneActionEl = null;
+    let wontDoActionEl = null;
+    let canCancel = true;
+    let taskId = null;
+    let activePointerId = null;
+
+    const resetSwipedElement = (animated = true) => {
+        if (!currentItemEl) return;
+        if (animated) {
+            currentItemEl.style.transition = 'transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1)';
+        } else {
+            currentItemEl.style.transition = 'none';
+        }
+        currentItemEl.style.transform = 'translateX(0px)';
+        if (doneActionEl) doneActionEl.style.opacity = '0';
+        if (wontDoActionEl) wontDoActionEl.style.opacity = '0';
+    };
+
+    document.addEventListener('pointerdown', (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
+
+        // Ignore interactive elements
+        if (e.target.closest('button, input, .custom-checkbox, .btn-menu, .task-dropdown, .subtasks-wrapper, .habit-calendar-wrapper, .history-type-badge')) {
+            return;
+        }
+
+        const wrapper = e.target.closest('.task-swipe-wrapper.swipeable-task');
+        if (!wrapper) return;
+
+        const itemEl = wrapper.querySelector('.task-item');
+        if (!itemEl) return;
+
+        startX = e.clientX;
+        startY = e.clientY;
+        isTracking = true;
+        isSwiping = false;
+        activePointerId = e.pointerId;
+        currentWrapper = wrapper;
+        currentItemEl = itemEl;
+        doneActionEl = wrapper.querySelector('.task-swipe-action-done');
+        wontDoActionEl = wrapper.querySelector('.task-swipe-action-wontdo');
+        canCancel = wrapper.getAttribute('data-can-cancel') === 'true';
+        taskId = wrapper.getAttribute('data-task-id');
+
+        currentItemEl.style.transition = 'none';
+    }, { passive: true });
+
+    document.addEventListener('pointermove', (e) => {
+        if (!isTracking || e.pointerId !== activePointerId || !currentItemEl) return;
+
+        const deltaX = e.clientX - startX;
+        const deltaY = e.clientY - startY;
+
+        if (!isSwiping) {
+            // Check vertical scroll vs horizontal swipe
+            if (Math.abs(deltaY) > 7 && Math.abs(deltaY) > Math.abs(deltaX)) {
+                isTracking = false;
+                resetSwipedElement(false);
+                return;
+            }
+            if (Math.abs(deltaX) > 8) {
+                if (deltaX < 0 && !canCancel) {
+                    isTracking = false;
+                    return;
+                }
+                isSwiping = true;
+            }
+        }
+
+        if (isSwiping) {
+            let moveX = deltaX;
+            if (moveX < 0 && !canCancel) {
+                moveX = 0;
+            }
+            if (Math.abs(moveX) > 90) {
+                const sign = moveX > 0 ? 1 : -1;
+                const extra = Math.abs(moveX) - 90;
+                moveX = sign * (90 + Math.pow(extra, 0.75));
+            }
+
+            currentItemEl.style.transform = `translateX(${moveX}px)`;
+
+            if (moveX > 0) {
+                if (doneActionEl) doneActionEl.style.opacity = String(Math.min(1, Math.max(0, (moveX - 10) / 60)));
+                if (wontDoActionEl) wontDoActionEl.style.opacity = '0';
+            } else if (moveX < 0) {
+                if (wontDoActionEl) wontDoActionEl.style.opacity = String(Math.min(1, Math.max(0, (Math.abs(moveX) - 10) / 60)));
+                if (doneActionEl) doneActionEl.style.opacity = '0';
+            }
+        }
+    }, { passive: true });
+
+    const handlePointerEnd = (e) => {
+        if (!isTracking || e.pointerId !== activePointerId) return;
+
+        isTracking = false;
+        activePointerId = null;
+
+        if (isSwiping && currentItemEl && taskId) {
+            const deltaX = e.clientX - startX;
+            window._justSwipedTaskId = taskId;
+            setTimeout(() => { window._justSwipedTaskId = null; }, 350);
+
+            const threshold = 75;
+            const targetItemEl = currentItemEl;
+            const targetTaskId = taskId;
+
+            if (deltaX > threshold) {
+                // Swipe Right -> Mark Done
+                targetItemEl.style.transition = 'transform 0.22s ease-out';
+                targetItemEl.style.transform = 'translateX(105%)';
+                setTimeout(() => {
+                    toggleItemComplete(targetTaskId, false);
+                }, 180);
+            } else if (deltaX < -threshold && canCancel) {
+                // Swipe Left -> Won't Do
+                targetItemEl.style.transition = 'transform 0.22s ease-out';
+                targetItemEl.style.transform = 'translateX(-105%)';
+                setTimeout(() => {
+                    cancelTaskByGesture(targetTaskId);
+                }, 180);
+            } else {
+                resetSwipedElement(true);
+            }
+        } else {
+            resetSwipedElement(true);
+        }
+
+        isSwiping = false;
+        currentWrapper = null;
+        currentItemEl = null;
+    };
+
+    document.addEventListener('pointerup', handlePointerEnd, { passive: true });
+    document.addEventListener('pointercancel', handlePointerEnd, { passive: true });
+}
+
+window.initTaskSwipeGestures = initTaskSwipeGestures;
+
 
 /* ===== js/app.js ===== */
 // Immediate synchronous routing check to eliminate auth screen page flash
@@ -4563,6 +5722,7 @@ function navigateToPage(targetPage, pushToHistory = true) {
             'tasks-page': 'Tasks',
             'habits-page': 'Habits',
             'calendar-page': 'Calendar',
+            'notes-page': 'Notes',
             'history-page': 'History',
             'pomodoro-page': 'Focus Timer',
             'stats-page': 'Stats',
@@ -4700,7 +5860,7 @@ function checkIfDashboardNeedsUpdate() {
     if (!window.activeTasksList || window.activeTasksList.length === 0) return false;
 
     const now = new Date();
-    let fingerprint = "";
+    let fingerprint = `${window.currentTaskFilter || 'all'}:${window.currentCategoryFilter || 'all'}:${window.currentTaskSort || 'default'}:${window.customFilterStartDate || ''}:${window.customFilterEndDate || ''}|`;
 
     window.activeTasksList.forEach(item => {
         let startInstant = item.startDate ? parseLocalISOString(item.startDate, item.startTime || '00:00') : new Date();
@@ -4772,6 +5932,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize premium custom dropdowns and pickers
     window.customPrioritySelect = initCustomSelect('priority-wrapper');
+    window.customCategorySelect = initCustomSelect('category-wrapper');
+    window.currentCategoryFilter = 'all';
     window.customFrequencySelect = initCustomSelect('frequency-wrapper', (val) => {
         const isCustom = (val === 'custom');
         document.getElementById('custom-freq-row').style.display = isCustom ? 'block' : 'none';
@@ -5003,6 +6165,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initPomodoroDrag();
     initModalLogic();
+    initTaskSwipeGestures();
 
     const listBtn = document.getElementById('view-list-btn');
     const kanbanBtn = document.getElementById('view-kanban-btn');
@@ -5032,6 +6195,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const initialLayout = localStorage.getItem('dashboardLayout') || 'list';
     setDashboardLayout(initialLayout);
     initSettings();
+    initNotesUI();
+    initAppUpdates();
     initMissedNotificationsUI();
     requestNotificationPermissions();
     requestBatteryOptimization();

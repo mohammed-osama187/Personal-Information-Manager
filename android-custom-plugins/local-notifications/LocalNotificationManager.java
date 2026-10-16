@@ -83,7 +83,11 @@ public class LocalNotificationManager {
         }
         String menuAction = data.getStringExtra(LocalNotificationManager.ACTION_INTENT_KEY);
 
-        dismissVisibleNotification(notificationId);
+        boolean isOngoing = data.getBooleanExtra("NOTIFICATION_IS_ONGOING", false);
+        boolean isAutoCancel = data.getBooleanExtra("NOTIFICATION_IS_AUTO_CANCEL", true);
+        if (notificationId != 888888 && !isOngoing && isAutoCancel) {
+            dismissVisibleNotification(notificationId);
+        }
 
         dataJson.put("actionId", menuAction);
         JSONObject request = null;
@@ -333,6 +337,8 @@ public class LocalNotificationManager {
         intent.putExtra(NOTIFICATION_OBJ_INTENT_KEY, localNotification.getSource());
         LocalNotificationSchedule schedule = localNotification.getSchedule();
         intent.putExtra(NOTIFICATION_IS_REMOVABLE_KEY, schedule == null || schedule.isRemovable());
+        intent.putExtra("NOTIFICATION_IS_ONGOING", localNotification.isOngoing());
+        intent.putExtra("NOTIFICATION_IS_AUTO_CANCEL", localNotification.isAutoCancel());
         return intent;
     }
 

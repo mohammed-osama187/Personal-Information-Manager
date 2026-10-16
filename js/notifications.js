@@ -238,6 +238,9 @@ export function initNotificationActionListeners() {
                 if (typeof window.navigateToPage === 'function') {
                     window.navigateToPage('pomodoro-page', true);
                 }
+                if (typeof window.syncTimerWithTimePassed === 'function') {
+                    window.syncTimerWithTimePassed();
+                }
             }
             return;
         }
@@ -712,55 +715,66 @@ export function scheduleItemNotifications(item) {
     const numericId = getStableNumericId(item.id);
     const dueNumericId = getStableNumericId(item.id) + 999999; 
 
-    // Cancel old notifications to prevent duplicates
+    // Cancel old notifications to prevent duplicates (including multi-timers)
     cancelMobileNotification(numericId);
     cancelMobileNotification(dueNumericId);
+    for (let i = 1; i <= 10; i++) {
+        cancelMobileNotification(numericId + (i * 1000));
+    }
 
     if (item.isCancelled || item.isDeleted) return;
 
     const isRepeating = (item.type === 'habit' || (item.frequency && item.frequency !== 'none'));
     if (item.isCompleted && !isRepeating) return;
 
-    if (item.startDate && item.startTime) {
-        let triggerTime;
-        if (isRepeating) {
-            const now = new Date();
-            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-            
-            const isCompletedToday = item.isCompleted || (item.completedDates && item.completedDates.includes(todayStr));
-            let startFromDate = item.startDate;
-            if (isCompletedToday) {
-                const tomorrow = new Date();
-                tomorrow.setDate(tomorrow.getDate() + 1);
-                startFromDate = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
-            }
-            triggerTime = getNextOccurrenceTime(startFromDate, item.startTime, item.frequency, item.specificDays, item.customNum, item.customUnit);
-        } else {
-            triggerTime = parseLocalISOString(item.startDate, item.startTime);
-        }
+    // Habit multiple reminder timers or single start time
+    const habitTimers = (item.type === 'habit' && Array.isArray(item.reminderTimes) && item.reminderTimes.length > 0)
+        ? item.reminderTimes
+        : (item.startTime ? [item.startTime] : []);
 
-        if (triggerTime && triggerTime > new Date()) {
-            let notifTitle = 'Task Reminder';
-            let notifBody = `It's time for: ${item.title}`;
-            if (item.type === 'event') {
-                notifTitle = 'Event Reminder';
-                notifBody = `Event starting: ${item.title}`;
-            } else if (item.type === 'habit') {
-                notifTitle = 'Habit Reminder';
-                notifBody = `Time for your habit: ${item.title}`;
+    if (item.startDate && habitTimers.length > 0) {
+        habitTimers.forEach((timeStr, idx) => {
+            const subNotifId = idx === 0 ? numericId : numericId + (idx * 1000);
+            let triggerTime;
+            if (isRepeating) {
+                const now = new Date();
+                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                
+                const isCompletedToday = item.isCompleted || (item.completedDates && item.completedDates.includes(todayStr));
+                let startFromDate = item.startDate;
+                if (isCompletedToday) {
+                    const tomorrow = new Date();
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    startFromDate = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+                }
+                triggerTime = getNextOccurrenceTime(startFromDate, timeStr, item.frequency, item.specificDays, item.customNum, item.customUnit);
+            } else {
+                triggerTime = parseLocalISOString(item.startDate, timeStr);
             }
 
-            scheduleMobileNotification(
-                numericId,
-                notifTitle,
-                notifBody,
-                triggerTime,
-                null,
-                'success.mp3',
-                { itemId: item.id, itemType: item.type || 'task' },
-                'TASK_ACTIONS'
-            );
-        }
+            if (triggerTime && triggerTime > new Date()) {
+                let notifTitle = 'Task Reminder';
+                let notifBody = `It's time for: ${item.title}`;
+                if (item.type === 'event') {
+                    notifTitle = 'Event Reminder';
+                    notifBody = `Event starting: ${item.title}`;
+                } else if (item.type === 'habit') {
+                    notifTitle = 'Habit Reminder';
+                    notifBody = `Time for your habit: ${item.title}`;
+                }
+
+                scheduleMobileNotification(
+                    subNotifId,
+                    notifTitle,
+                    notifBody,
+                    triggerTime,
+                    null,
+                    'success.mp3',
+                    { itemId: item.id, itemType: item.type || 'task' },
+                    'TASK_ACTIONS'
+                );
+            }
+        });
     }
 
     // Schedule Deadline (Due Date) if defined

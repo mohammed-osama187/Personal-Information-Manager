@@ -116,6 +116,8 @@
                         Habits</button>
                     <button class="menu-item" data-target="calendar-page"><i class="fa-regular fa-calendar-days"></i>
                         Calendar</button>
+                    <button class="menu-item" data-target="notes-page"><i class="fa-solid fa-note-sticky"></i>
+                        Notes</button>
                     <button class="menu-item" data-target="history-page"><i class="fa-solid fa-clock-rotate-left"></i>
                         History</button>
                     <button class="menu-item" data-target="pomodoro-page"><i class="fa-solid fa-stopwatch"></i> Focus
@@ -127,6 +129,20 @@
                     <button class="menu-item" data-target="about-page"><i class="fa-solid fa-circle-info"></i> About
                         Us</button>
                 </nav>
+            </div>
+
+            <!-- Web-only APK download banner at bottom of sidebar -->
+            <div id="sidebar-apk-download" class="sidebar-download-banner web-only-download" style="display: none;">
+                <div class="download-banner-inner">
+                    <div class="download-banner-icon"><i class="fa-brands fa-android"></i></div>
+                    <div class="download-info">
+                        <div class="download-title">FlowTick Android</div>
+                        <div class="download-desc">Get the Mobile App</div>
+                    </div>
+                    <a id="sidebar-download-link" href="https://github.com/mohammed-osama187/Personal-Information-Manager/releases/latest/download/app-release.apk" target="_blank" rel="noopener noreferrer" class="download-action-btn" title="Download APK">
+                        <i class="fa-solid fa-download"></i>
+                    </a>
+                </div>
             </div>
         </aside>
 
@@ -211,6 +227,17 @@
                     </div>
                 </div>
 
+                <!-- Category Filter Pills Bar -->
+                <div class="category-filter-bar" id="task-category-filter-bar">
+                    <button class="btn-category-chip active" data-category="all"><i class="fa-solid fa-layer-group"></i> All</button>
+                    <button class="btn-category-chip" data-category="Work"><span class="cat-dot" style="background:#2F7BF6;"></span> Work</button>
+                    <button class="btn-category-chip" data-category="Personal"><span class="cat-dot" style="background:#52C41A;"></span> Personal</button>
+                    <button class="btn-category-chip" data-category="Study"><span class="cat-dot" style="background:#722ED1;"></span> Study</button>
+                    <button class="btn-category-chip" data-category="Health"><span class="cat-dot" style="background:#FA8C16;"></span> Health</button>
+                    <button class="btn-category-chip" data-category="Finance"><span class="cat-dot" style="background:#13C2C2;"></span> Finance</button>
+                    <button class="btn-category-chip" data-category="Other"><span class="cat-dot" style="background:#8C8C8C;"></span> Other</button>
+                </div>
+
                 <div id="dashboard-view-container">
                     <!-- Standard List or Kanban board rendered dynamically in app.js -->
                 </div>
@@ -248,6 +275,35 @@
                 </header>
                 <div class="card">
                     <div id="calendar-placeholder"></div>
+                </div>
+            </section>
+
+            <section id="notes-page" class="page-section">
+                <header class="page-header flex-header">
+                    <div>
+                        <p>Write, format, and organize your ideas, documents, and thoughts.</p>
+                    </div>
+                    <button class="btn btn-primary" id="create-note-btn"><i class="fa-solid fa-plus"></i> New Note</button>
+                </header>
+
+                <div class="notes-controls-bar">
+                    <div class="notes-search-wrapper">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="notes-search-input" placeholder="Search notes by title or content...">
+                    </div>
+                    <div class="note-filter-chips-row">
+                        <button class="note-filter-chip active" data-filter="all"><i class="fa-solid fa-layer-group"></i> All</button>
+                        <button class="note-filter-chip" data-filter="Work"><span class="cat-dot" style="background:#2F7BF6;"></span> Work</button>
+                        <button class="note-filter-chip" data-filter="Personal"><span class="cat-dot" style="background:#52C41A;"></span> Personal</button>
+                        <button class="note-filter-chip" data-filter="Study"><span class="cat-dot" style="background:#722ED1;"></span> Study</button>
+                        <button class="note-filter-chip" data-filter="Health"><span class="cat-dot" style="background:#FA8C16;"></span> Health</button>
+                        <button class="note-filter-chip" data-filter="Finance"><span class="cat-dot" style="background:#13C2C2;"></span> Finance</button>
+                        <button class="note-filter-chip" data-filter="Other"><span class="cat-dot" style="background:#8C8C8C;"></span> Other</button>
+                    </div>
+                </div>
+
+                <div id="notes-grid" class="notes-grid">
+                    <!-- Note cards rendered dynamically -->
                 </div>
             </section>
 
@@ -451,6 +507,40 @@
                         </div>
                         <button type="submit" class="btn btn-secondary">Update Password</button>
                     </form>
+                </div>
+
+                <div class="card" id="settings-app-updates">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; gap: 16px;">
+                            <div style="width: 44px; height: 44px; border-radius: 12px; background: rgba(47, 123, 246, 0.15); color: var(--color-ticktick-blue); display: flex; align-items: center; justify-content: center; font-size: 20px;">
+                                <i class="fa-solid fa-cloud-arrow-down"></i>
+                            </div>
+                            <div>
+                                <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">App Version & Updates</h3>
+                                <p style="font-size: 13px; color: var(--text-muted); margin: 0;" id="app-current-version-text">Version 1.0.0 (Build 1)</p>
+                            </div>
+                        </div>
+                        <button id="check-updates-btn" class="btn btn-secondary" style="display: inline-flex; align-items: center; gap: 8px;">
+                            <i class="fa-solid fa-arrows-rotate"></i> Check for Updates
+                        </button>
+                    </div>
+                </div>
+
+                <div id="settings-apk-download" class="card web-only-download" style="display: none; border-color: rgba(82, 196, 26, 0.3); background: rgba(82, 196, 26, 0.04);">
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; gap: 16px;">
+                            <div style="width: 44px; height: 44px; border-radius: 12px; background: rgba(82, 196, 26, 0.15); color: #52C41A; display: flex; align-items: center; justify-content: center; font-size: 22px;">
+                                <i class="fa-brands fa-android"></i>
+                            </div>
+                            <div>
+                                <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 4px; color: var(--text-main);">Android Mobile App</h3>
+                                <p style="font-size: 13px; color: var(--text-muted); margin: 0;">Download the direct APK file to install FlowTick on your Android device.</p>
+                            </div>
+                        </div>
+                        <a id="settings-download-link" href="https://github.com/mohammed-osama187/Personal-Information-Manager/releases/latest/download/app-release.apk" target="_blank" rel="noopener noreferrer" class="btn btn-primary" style="background-color: #52C41A; border-color: #52C41A; text-decoration: none; display: inline-flex; align-items: center; gap: 8px;">
+                            <i class="fa-solid fa-download"></i> Download APK
+                        </a>
+                    </div>
                 </div>
 
                 <div class="card" style="border-color: #FF4D4F33; background: #FF4D4F05;">
@@ -740,6 +830,24 @@
                         </div>
                     </div>
 
+                    <div class="form-group id-task-only" id="category-container">
+                        <label>Category</label>
+                        <div class="custom-select-wrapper open-upward" id="category-wrapper">
+                            <div class="custom-select-display" id="category-display">
+                                <span class="cat-dot" style="background:#2F7BF6;"></span> Work <i class="fa-solid fa-chevron-down caret-icon"></i>
+                            </div>
+                            <div class="custom-select-options" id="category-options">
+                                <div class="custom-select-option" data-value="Work"><span class="cat-dot" style="background:#2F7BF6;"></span> Work</div>
+                                <div class="custom-select-option" data-value="Personal"><span class="cat-dot" style="background:#52C41A;"></span> Personal</div>
+                                <div class="custom-select-option" data-value="Study"><span class="cat-dot" style="background:#722ED1;"></span> Study</div>
+                                <div class="custom-select-option" data-value="Health"><span class="cat-dot" style="background:#FA8C16;"></span> Health</div>
+                                <div class="custom-select-option" data-value="Finance"><span class="cat-dot" style="background:#13C2C2;"></span> Finance</div>
+                                <div class="custom-select-option" data-value="Other"><span class="cat-dot" style="background:#8C8C8C;"></span> Other</div>
+                            </div>
+                            <input type="hidden" id="task-category" value="Work">
+                        </div>
+                    </div>
+
                     <div class="form-group" id="frequency-container">
                         <label>Repetition</label>
                         <div class="custom-select-wrapper open-upward" id="frequency-wrapper">
@@ -798,6 +906,29 @@
                         <label class="day-toggle"><input type="checkbox" value="4"><span>Th</span></label>
                         <label class="day-toggle"><input type="checkbox" value="5"><span>Fr</span></label>
                         <label class="day-toggle"><input type="checkbox" value="6"><span>Sa</span></label>
+                    </div>
+                </div>
+
+                <div class="custom-bg id-habit-only" id="habit-settings-row"
+                    style="display:none; padding: 16px; border-radius: 16px; margin-bottom: 16px;">
+                    <div class="form-row" style="margin-bottom: 12px;">
+                        <div class="form-group" style="width: 100%;">
+                            <label><i class="fa-solid fa-bullseye"></i> Daily Goal (Times per day)</label>
+                            <input type="number" id="habit-times-per-day" min="1" max="99" value="1"
+                                style="width: 100%; border-radius: 30px; padding: 10px 16px; border: 1px solid var(--border-color); background-color: var(--bg-notion-sidebar); color: var(--text-main); font-size: 14.5px; box-sizing: border-box;">
+                        </div>
+                    </div>
+                    <div class="form-group" style="width: 100%; margin-bottom: 0;">
+                        <label><i class="fa-regular fa-bell"></i> Reminder Timers</label>
+                        <div id="habit-timers-list" class="habit-timers-list" style="display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0;"></div>
+                        <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
+                            <input type="time" id="habit-new-timer-input"
+                                style="flex: 1; padding: 8px 16px; border-radius: 30px; border: 1px solid var(--border-color); background-color: var(--bg-notion-sidebar); color: var(--text-main); font-size: 14px;">
+                            <button type="button" id="habit-add-timer-btn" class="btn btn-secondary"
+                                style="border-radius: 30px; padding: 8px 18px; font-size: 13px; white-space: nowrap;">
+                                <i class="fa-solid fa-plus"></i> Add Timer
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -893,6 +1024,102 @@
                         style="border-radius: 30px; padding: 8px 20px; font-size: 13.5px;">Apply Filter</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Note Editor Modal -->
+    <div id="note-editor-modal" class="modal note-editor-modal-container" style="z-index: 1020;">
+        <div class="modal-content note-editor-content-box">
+            <div class="note-editor-topbar">
+                <div class="note-editor-left">
+                    <button id="close-note-editor" class="btn-icon" title="Close / Back"><i class="fa-solid fa-arrow-left"></i></button>
+                    <div class="note-editor-category-wrapper">
+                        <select id="note-category-select" class="note-category-select">
+                            <option value="Work">💼 Work</option>
+                            <option value="Personal">👤 Personal</option>
+                            <option value="Study">📚 Study</option>
+                            <option value="Health">🏃 Health</option>
+                            <option value="Finance">💰 Finance</option>
+                            <option value="Other">🏷️ Other</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="note-editor-right">
+                    <span id="note-save-status" class="note-save-status saved">Saved</span>
+                    <button id="note-pin-btn" class="btn-icon" title="Pin Note"><i class="fa-solid fa-thumbtack"></i></button>
+                    <button id="delete-note-btn" class="btn-icon" title="Delete Note" style="color: #FF4D4F;"><i class="fa-solid fa-trash"></i></button>
+                    <button id="save-note-btn" class="btn btn-primary btn-sm"><i class="fa-solid fa-check"></i> Save</button>
+                </div>
+            </div>
+
+            <div class="note-editor-title-container">
+                <input type="text" id="note-title-input" class="note-title-input" placeholder="Note Title...">
+            </div>
+
+            <!-- Formatting Toolbar -->
+            <div class="note-formatting-toolbar" id="note-formatting-toolbar">
+                <div class="note-toolbar-group">
+                    <select id="note-heading-select" class="note-toolbar-select" title="Text Style">
+                        <option value="p">Normal Text</option>
+                        <option value="h1">Heading 1</option>
+                        <option value="h2">Heading 2</option>
+                        <option value="h3">Heading 3</option>
+                    </select>
+                </div>
+                <div class="note-toolbar-divider"></div>
+                <div class="note-toolbar-group">
+                    <button type="button" class="note-format-btn" data-command="bold" title="Bold"><i class="fa-solid fa-bold"></i></button>
+                    <button type="button" class="note-format-btn" data-command="italic" title="Italic"><i class="fa-solid fa-italic"></i></button>
+                    <button type="button" class="note-format-btn" data-command="underline" title="Underline"><i class="fa-solid fa-underline"></i></button>
+                    <button type="button" class="note-format-btn" data-command="strikeThrough" title="Strikethrough"><i class="fa-solid fa-strikethrough"></i></button>
+                </div>
+                <div class="note-toolbar-divider"></div>
+                <div class="note-toolbar-group">
+                    <button type="button" class="note-format-btn" data-command="justifyLeft" title="Align Left"><i class="fa-solid fa-align-left"></i></button>
+                    <button type="button" class="note-format-btn" data-command="justifyCenter" title="Align Center"><i class="fa-solid fa-align-center"></i></button>
+                    <button type="button" class="note-format-btn" data-command="justifyRight" title="Align Right"><i class="fa-solid fa-align-right"></i></button>
+                    <button type="button" class="note-format-btn" data-command="justifyFull" title="Justify"><i class="fa-solid fa-align-justify"></i></button>
+                </div>
+                <div class="note-toolbar-divider"></div>
+                <div class="note-toolbar-group">
+                    <button type="button" class="note-format-btn" data-command="insertUnorderedList" title="Bulleted List"><i class="fa-solid fa-list-ul"></i></button>
+                    <button type="button" class="note-format-btn" data-command="insertOrderedList" title="Numbered List"><i class="fa-solid fa-list-ol"></i></button>
+                    <button type="button" class="note-format-btn" data-command="blockquote" title="Quote Block"><i class="fa-solid fa-quote-left"></i></button>
+                    <button type="button" class="note-format-btn" data-command="insertHorizontalRule" title="Divider"><i class="fa-solid fa-minus"></i></button>
+                    <button type="button" class="note-format-btn" data-command="removeFormat" title="Clear Formatting"><i class="fa-solid fa-text-slash"></i></button>
+                </div>
+            </div>
+
+            <!-- Content Editable Body -->
+            <div id="note-editor-body" class="note-editor-body" contenteditable="true" data-placeholder="Start typing your note here..."></div>
+
+            <!-- Footer -->
+            <div class="note-editor-footer">
+                <span id="note-word-count" class="note-word-count">0 words • 0 chars</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- App Update Modal -->
+    <div id="update-modal" class="modal" style="z-index: 1030;">
+        <div class="modal-content update-modal-content">
+            <div class="update-icon-circle">
+                <i class="fa-solid fa-rocket"></i>
+            </div>
+            <h3 class="update-modal-title">New Version Available!</h3>
+            <div id="update-version-badge" class="update-version-badge">v1.1.0</div>
+            
+            <div class="update-notes-box">
+                <div class="update-notes-header"><i class="fa-solid fa-sparkles"></i> What's New:</div>
+                <div id="update-release-notes" class="update-release-notes"></div>
+            </div>
+
+            <div class="update-actions">
+                <button type="button" id="update-cancel-btn" class="btn btn-secondary">Later</button>
+                <button type="button" id="update-confirm-btn" class="btn btn-primary update-download-btn">
+                    <i class="fa-solid fa-download"></i> Update Now
+                </button>
+            </div>
         </div>
     </div>
 

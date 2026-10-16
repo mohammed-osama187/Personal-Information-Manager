@@ -1,5 +1,5 @@
 import { getNotesFromFirebase, saveNoteToFirebase, deleteNoteFromFirebase } from './db.js';
-import { showToast, showConfirm, getCategoryMeta } from './utils.js';
+import { showToast, showConfirm, getCategoryMeta, initCustomSelect } from './utils.js';
 
 let activeNoteId = null;
 let currentNotesFilter = 'all';
@@ -15,7 +15,20 @@ export function initNotesUI() {
     const pinNoteBtn = document.getElementById('note-pin-btn');
     const editorBody = document.getElementById('note-editor-body');
     const titleInput = document.getElementById('note-title-input');
-    const headingSelect = document.getElementById('note-heading-select');
+
+    // Initialize custom dropdowns in Note Editor
+    window.customNoteCategorySelect = initCustomSelect('note-category-wrapper', () => {
+        triggerAutoSave();
+    });
+
+    window.customNoteHeadingSelect = initCustomSelect('note-heading-wrapper', (val) => {
+        if (val === 'p') {
+            executeFormat('formatBlock', '<p>');
+        } else if (val === 'h1' || val === 'h2' || val === 'h3') {
+            executeFormat('formatBlock', `<${val}>`);
+        }
+        if (editorBody) editorBody.focus();
+    });
 
     if (createBtn) {
         createBtn.addEventListener('click', () => openNoteEditor(null));
@@ -85,17 +98,7 @@ export function initNotesUI() {
         });
     });
 
-    if (headingSelect) {
-        headingSelect.addEventListener('change', (e) => {
-            const val = e.target.value;
-            if (val === 'p') {
-                executeFormat('formatBlock', '<p>');
-            } else if (val === 'h1' || val === 'h2' || val === 'h3') {
-                executeFormat('formatBlock', `<${val}>`);
-            }
-            if (editorBody) editorBody.focus();
-        });
-    }
+
 
     // Note category filter chips in Notes page
     const filterChips = document.querySelectorAll('.note-filter-chip');
@@ -157,16 +160,21 @@ function updateToolbarStates() {
     });
 
     // Check heading level
-    const headingSelect = document.getElementById('note-heading-select');
-    if (headingSelect) {
+    if (window.customNoteHeadingSelect) {
         try {
             const parent = window.getSelection()?.anchorNode?.parentElement;
             if (parent) {
                 const tag = parent.closest('h1, h2, h3, blockquote, p')?.tagName?.toLowerCase();
+                const labels = {
+                    'p': '<i class="fa-solid fa-paragraph"></i> Normal',
+                    'h1': '<i class="fa-solid fa-heading"></i> Heading 1',
+                    'h2': '<i class="fa-solid fa-heading" style="font-size: 11px;"></i> Heading 2',
+                    'h3': '<i class="fa-solid fa-heading" style="font-size: 9.5px;"></i> Heading 3'
+                };
                 if (tag === 'h1' || tag === 'h2' || tag === 'h3') {
-                    headingSelect.value = tag;
+                    window.customNoteHeadingSelect.setValue(tag, labels[tag]);
                 } else {
-                    headingSelect.value = 'p';
+                    window.customNoteHeadingSelect.setValue('p', labels['p']);
                 }
             }
         } catch (_) {}
@@ -294,7 +302,14 @@ export async function openNoteEditor(noteId) {
         if (note) {
             titleInput.value = note.title || '';
             editorBody.innerHTML = note.content || '';
-            if (categorySelect) categorySelect.value = note.category || 'Work';
+            const cat = note.category || 'Work';
+            const catMeta = getCategoryMeta(cat);
+            if (window.customNoteCategorySelect) {
+                window.customNoteCategorySelect.setValue(cat, `<i class="fa-solid ${catMeta.icon}" style="color:${catMeta.color};"></i> ${catMeta.name}`);
+            }
+            if (window.customNoteHeadingSelect) {
+                window.customNoteHeadingSelect.setValue('p', '<i class="fa-solid fa-paragraph"></i> Normal');
+            }
             if (pinBtn) {
                 if (note.isPinned) pinBtn.classList.add('active');
                 else pinBtn.classList.remove('active');
@@ -304,7 +319,13 @@ export async function openNoteEditor(noteId) {
         // New note
         titleInput.value = '';
         editorBody.innerHTML = '';
-        if (categorySelect) categorySelect.value = 'Work';
+        const catMeta = getCategoryMeta('Work');
+        if (window.customNoteCategorySelect) {
+            window.customNoteCategorySelect.setValue('Work', `<i class="fa-solid ${catMeta.icon}" style="color:${catMeta.color};"></i> ${catMeta.name}`);
+        }
+        if (window.customNoteHeadingSelect) {
+            window.customNoteHeadingSelect.setValue('p', '<i class="fa-solid fa-paragraph"></i> Normal');
+        }
         if (pinBtn) pinBtn.classList.remove('active');
     }
 
@@ -350,7 +371,7 @@ export async function saveCurrentNote(showFeedback = false) {
         return;
     }
 
-    const category = categorySelect ? categorySelect.value : 'Work';
+    const category = window.customNoteCategorySelect ? window.customNoteCategorySelect.getValue() : (document.getElementById('note-category-input')?.value || 'Work');
     const isPinned = pinBtn ? pinBtn.classList.contains('active') : false;
 
     const noteObj = {

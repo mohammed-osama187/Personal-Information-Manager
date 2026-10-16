@@ -185,6 +185,71 @@ function getCategoryMeta(categoryName) {
 }
 window.getCategoryMeta = getCategoryMeta;
 
+function initCustomSelect(wrapperId, onChangeCallback) {
+    const wrapper = document.getElementById(wrapperId);
+    if (!wrapper) return null;
+
+    const display = wrapper.querySelector('.custom-select-display');
+    const optionsDiv = wrapper.querySelector('.custom-select-options');
+    const hiddenInput = wrapper.querySelector('input[type="hidden"]');
+
+    if (!display || !optionsDiv || !hiddenInput) return null;
+
+    display.addEventListener('click', (e) => {
+        e.stopPropagation();
+        
+        document.querySelectorAll('.custom-select-options.show').forEach(el => {
+            if (el !== optionsDiv) el.classList.remove('show');
+        });
+        document.querySelectorAll('.custom-select-wrapper.open').forEach(el => {
+            if (el !== wrapper) el.classList.remove('open');
+        });
+
+        optionsDiv.classList.toggle('show');
+        wrapper.classList.toggle('open');
+    });
+
+    optionsDiv.addEventListener('click', (e) => {
+        const option = e.target.closest('.custom-select-option');
+        if (!option) return;
+        
+        e.stopPropagation();
+        const value = option.getAttribute('data-value');
+        hiddenInput.value = value;
+
+        display.innerHTML = `${option.innerHTML} <i class="fa-solid fa-chevron-down caret-icon"></i>`;
+
+        optionsDiv.classList.remove('show');
+        wrapper.classList.remove('open');
+
+        if (onChangeCallback) {
+            onChangeCallback(value);
+        }
+        hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    return {
+        setValue(value, customText = null) {
+            hiddenInput.value = value;
+            if (customText) {
+                display.innerHTML = `${customText} <i class="fa-solid fa-chevron-down caret-icon"></i>`;
+                return;
+            }
+            const opt = optionsDiv.querySelector(`.custom-select-option[data-value="${value}"]`);
+            if (opt) {
+                display.innerHTML = `${opt.innerHTML} <i class="fa-solid fa-chevron-down caret-icon"></i>`;
+            } else {
+                display.innerHTML = `${value || 'No specific task'} <i class="fa-solid fa-chevron-down caret-icon"></i>`;
+            }
+        },
+        getValue() {
+            return hiddenInput.value;
+        }
+    };
+}
+window.initCustomSelect = initCustomSelect;
+
+
 
 
 /* ===== js/db.js ===== */
@@ -2233,7 +2298,20 @@ function initNotesUI() {
     const pinNoteBtn = document.getElementById('note-pin-btn');
     const editorBody = document.getElementById('note-editor-body');
     const titleInput = document.getElementById('note-title-input');
-    const headingSelect = document.getElementById('note-heading-select');
+
+    // Initialize custom dropdowns in Note Editor
+    window.customNoteCategorySelect = initCustomSelect('note-category-wrapper', () => {
+        triggerAutoSave();
+    });
+
+    window.customNoteHeadingSelect = initCustomSelect('note-heading-wrapper', (val) => {
+        if (val === 'p') {
+            executeFormat('formatBlock', '<p>');
+        } else if (val === 'h1' || val === 'h2' || val === 'h3') {
+            executeFormat('formatBlock', `<${val}>`);
+        }
+        if (editorBody) editorBody.focus();
+    });
 
     if (createBtn) {
         createBtn.addEventListener('click', () => openNoteEditor(null));
@@ -2303,17 +2381,7 @@ function initNotesUI() {
         });
     });
 
-    if (headingSelect) {
-        headingSelect.addEventListener('change', (e) => {
-            const val = e.target.value;
-            if (val === 'p') {
-                executeFormat('formatBlock', '<p>');
-            } else if (val === 'h1' || val === 'h2' || val === 'h3') {
-                executeFormat('formatBlock', `<${val}>`);
-            }
-            if (editorBody) editorBody.focus();
-        });
-    }
+
 
     // Note category filter chips in Notes page
     const filterChips = document.querySelectorAll('.note-filter-chip');
@@ -2375,16 +2443,21 @@ function updateToolbarStates() {
     });
 
     // Check heading level
-    const headingSelect = document.getElementById('note-heading-select');
-    if (headingSelect) {
+    if (window.customNoteHeadingSelect) {
         try {
             const parent = window.getSelection()?.anchorNode?.parentElement;
             if (parent) {
                 const tag = parent.closest('h1, h2, h3, blockquote, p')?.tagName?.toLowerCase();
+                const labels = {
+                    'p': '<i class="fa-solid fa-paragraph"></i> Normal',
+                    'h1': '<i class="fa-solid fa-heading"></i> Heading 1',
+                    'h2': '<i class="fa-solid fa-heading" style="font-size: 11px;"></i> Heading 2',
+                    'h3': '<i class="fa-solid fa-heading" style="font-size: 9.5px;"></i> Heading 3'
+                };
                 if (tag === 'h1' || tag === 'h2' || tag === 'h3') {
-                    headingSelect.value = tag;
+                    window.customNoteHeadingSelect.setValue(tag, labels[tag]);
                 } else {
-                    headingSelect.value = 'p';
+                    window.customNoteHeadingSelect.setValue('p', labels['p']);
                 }
             }
         } catch (_) {}
@@ -2512,7 +2585,14 @@ async function openNoteEditor(noteId) {
         if (note) {
             titleInput.value = note.title || '';
             editorBody.innerHTML = note.content || '';
-            if (categorySelect) categorySelect.value = note.category || 'Work';
+            const cat = note.category || 'Work';
+            const catMeta = getCategoryMeta(cat);
+            if (window.customNoteCategorySelect) {
+                window.customNoteCategorySelect.setValue(cat, `<i class="fa-solid ${catMeta.icon}" style="color:${catMeta.color};"></i> ${catMeta.name}`);
+            }
+            if (window.customNoteHeadingSelect) {
+                window.customNoteHeadingSelect.setValue('p', '<i class="fa-solid fa-paragraph"></i> Normal');
+            }
             if (pinBtn) {
                 if (note.isPinned) pinBtn.classList.add('active');
                 else pinBtn.classList.remove('active');
@@ -2522,7 +2602,13 @@ async function openNoteEditor(noteId) {
         // New note
         titleInput.value = '';
         editorBody.innerHTML = '';
-        if (categorySelect) categorySelect.value = 'Work';
+        const catMeta = getCategoryMeta('Work');
+        if (window.customNoteCategorySelect) {
+            window.customNoteCategorySelect.setValue('Work', `<i class="fa-solid ${catMeta.icon}" style="color:${catMeta.color};"></i> ${catMeta.name}`);
+        }
+        if (window.customNoteHeadingSelect) {
+            window.customNoteHeadingSelect.setValue('p', '<i class="fa-solid fa-paragraph"></i> Normal');
+        }
         if (pinBtn) pinBtn.classList.remove('active');
     }
 
@@ -2568,7 +2654,7 @@ async function saveCurrentNote(showFeedback = false) {
         return;
     }
 
-    const category = categorySelect ? categorySelect.value : 'Work';
+    const category = window.customNoteCategorySelect ? window.customNoteCategorySelect.getValue() : (document.getElementById('note-category-input')?.value || 'Work');
     const isPinned = pinBtn ? pinBtn.classList.contains('active') : false;
 
     const noteObj = {
@@ -2677,16 +2763,26 @@ function initAppUpdates() {
         });
     }
 
-    // 2. Settings "Check for Updates" button
+    // 2. App-only Update Check visibility (shown only in mobile app, hidden on website)
+    const appUpdateCards = document.querySelectorAll('.app-only-update');
+    if (isNative) {
+        appUpdateCards.forEach(el => {
+            el.style.display = '';
+        });
+        updateSettingsVersionDisplay();
+    } else {
+        appUpdateCards.forEach(el => {
+            el.style.display = 'none';
+        });
+    }
+
+    // Settings "Check for Updates" button
     const checkUpdatesBtn = document.getElementById('check-updates-btn');
     if (checkUpdatesBtn) {
         checkUpdatesBtn.addEventListener('click', () => {
             checkAppUpdate(true);
         });
     }
-
-    // Update current version text in settings
-    updateSettingsVersionDisplay();
 
     // 3. Modal action buttons
     const updateCancelBtn = document.getElementById('update-cancel-btn');
@@ -2838,71 +2934,8 @@ let _detailsKebabCloseHandler = null;
 let settingsInitialized = false;
 
 
-// ==========================================
-// Custom Select dropdown helper
-// ==========================================
-function initCustomSelect(wrapperId, onChangeCallback) {
-    const wrapper = document.getElementById(wrapperId);
-    if (!wrapper) return null;
-
-    const display = wrapper.querySelector('.custom-select-display');
-    const optionsDiv = wrapper.querySelector('.custom-select-options');
-    const hiddenInput = wrapper.querySelector('input[type="hidden"]');
-
-    if (!display || !optionsDiv || !hiddenInput) return null;
-
-    display.addEventListener('click', (e) => {
-        e.stopPropagation();
-        
-        document.querySelectorAll('.custom-select-options.show').forEach(el => {
-            if (el !== optionsDiv) el.classList.remove('show');
-        });
-        document.querySelectorAll('.custom-select-wrapper.open').forEach(el => {
-            if (el !== wrapper) el.classList.remove('open');
-        });
-
-        optionsDiv.classList.toggle('show');
-        wrapper.classList.toggle('open');
-    });
-
-    optionsDiv.addEventListener('click', (e) => {
-        const option = e.target.closest('.custom-select-option');
-        if (!option) return;
-        
-        e.stopPropagation();
-        const value = option.getAttribute('data-value');
-        hiddenInput.value = value;
-
-        display.innerHTML = `${option.innerHTML} <i class="fa-solid fa-chevron-down caret-icon"></i>`;
-
-        optionsDiv.classList.remove('show');
-        wrapper.classList.remove('open');
-
-        if (onChangeCallback) {
-            onChangeCallback(value);
-        }
-        hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-
-    return {
-        setValue(value, customText = null) {
-            hiddenInput.value = value;
-            if (customText) {
-                display.innerHTML = `${customText} <i class="fa-solid fa-chevron-down caret-icon"></i>`;
-                return;
-            }
-            const opt = optionsDiv.querySelector(`.custom-select-option[data-value="${value}"]`);
-            if (opt) {
-                display.innerHTML = `${opt.innerHTML} <i class="fa-solid fa-chevron-down caret-icon"></i>`;
-            } else {
-                display.innerHTML = `${value || 'No specific task'} <i class="fa-solid fa-chevron-down caret-icon"></i>`;
-            }
-        },
-        getValue() {
-            return hiddenInput.value;
-        }
-    };
-}
+// Re-export custom select dropdown helper from utils.js
+export { initCustomSelect } from './utils.js';
 
 // ==========================================
 // Custom 12h Time Picker component helper
@@ -3462,7 +3495,7 @@ function initModalLogic() {
             }
             if (window.customCategorySelect) {
                 const meta = getCategoryMeta('Work');
-                window.customCategorySelect.setValue('Work', `<span class="cat-dot" style="background:${meta.color};"></span> Work`);
+                window.customCategorySelect.setValue('Work', `<i class="fa-solid ${meta.icon}" style="color:${meta.color};"></i> Work`);
             }
             if (window.customFrequencySelect) {
                 window.customFrequencySelect.setValue('none', 'No Repeat');
@@ -3703,7 +3736,7 @@ function editItem(id) {
             if (catInput) catInput.value = cat;
             if (window.customCategorySelect) {
                 const meta = getCategoryMeta(cat);
-                window.customCategorySelect.setValue(cat, `<span class="cat-dot" style="background:${meta.color};"></span> ${meta.name}`);
+                window.customCategorySelect.setValue(cat, `<i class="fa-solid ${meta.icon}" style="color:${meta.color};"></i> ${meta.name}`);
             }
 
             if (item.dueDate) document.getElementById('task-due-date').value = item.dueDate;
@@ -4062,7 +4095,7 @@ function renderTaskCard(item, { isHistory = false, showHabitCalendar = true, sho
     if (item.type === 'task' || !item.type) {
         const cat = item.category || 'Work';
         const catMeta = getCategoryMeta(cat);
-        categoryBadgeHTML = `<span class="task-category-pill" style="border: 1px solid ${catMeta.color}35; background:${catMeta.bg}; color:${catMeta.color};"><span class="cat-dot" style="background:${catMeta.color};"></span>${catMeta.name}</span>`;
+        categoryBadgeHTML = `<span class="task-category-pill" style="border: 1px solid ${catMeta.color}35; background:${catMeta.bg}; color:${catMeta.color};"><i class="fa-solid ${catMeta.icon}"></i> ${catMeta.name}</span>`;
     }
     if (item.type === 'task') {
         if (item.priority === 'high') flagIcon = ' <i class="fa-solid fa-flag" style="color: #FF4D4F; font-size: 13px;"></i>';
@@ -5118,7 +5151,7 @@ function showItemDetails(id) {
         if (item.type === 'task' || !item.type) {
             const cat = item.category || 'Work';
             const catMeta = getCategoryMeta(cat);
-            categoryBadgeDetails = `<span class="task-category-pill" style="border: 1px solid ${catMeta.color}35; background:${catMeta.bg}; color:${catMeta.color}; padding: 4px 10px; border-radius: 12px; font-size:12px; font-weight:600;"><span class="cat-dot" style="background:${catMeta.color};"></span>${catMeta.name}</span>`;
+            categoryBadgeDetails = `<span class="task-category-pill" style="border: 1px solid ${catMeta.color}35; background:${catMeta.bg}; color:${catMeta.color}; padding: 4px 10px; border-radius: 12px; font-size:12px; font-weight:600;"><i class="fa-solid ${catMeta.icon}"></i> ${catMeta.name}</span>`;
         }
 
         bodyEl.innerHTML = `

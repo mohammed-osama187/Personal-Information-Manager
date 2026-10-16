@@ -179,3 +179,68 @@ export function getCategoryMeta(categoryName) {
 }
 window.getCategoryMeta = getCategoryMeta;
 
+export function initCustomSelect(wrapperId, onChangeCallback) {
+    const wrapper = document.getElementById(wrapperId);
+    if (!wrapper) return null;
+
+    const display = wrapper.querySelector('.custom-select-display');
+    const optionsDiv = wrapper.querySelector('.custom-select-options');
+    const hiddenInput = wrapper.querySelector('input[type="hidden"]');
+
+    if (!display || !optionsDiv || !hiddenInput) return null;
+
+    display.addEventListener('click', (e) => {
+        e.stopPropagation();
+        
+        document.querySelectorAll('.custom-select-options.show').forEach(el => {
+            if (el !== optionsDiv) el.classList.remove('show');
+        });
+        document.querySelectorAll('.custom-select-wrapper.open').forEach(el => {
+            if (el !== wrapper) el.classList.remove('open');
+        });
+
+        optionsDiv.classList.toggle('show');
+        wrapper.classList.toggle('open');
+    });
+
+    optionsDiv.addEventListener('click', (e) => {
+        const option = e.target.closest('.custom-select-option');
+        if (!option) return;
+        
+        e.stopPropagation();
+        const value = option.getAttribute('data-value');
+        hiddenInput.value = value;
+
+        display.innerHTML = `${option.innerHTML} <i class="fa-solid fa-chevron-down caret-icon"></i>`;
+
+        optionsDiv.classList.remove('show');
+        wrapper.classList.remove('open');
+
+        if (onChangeCallback) {
+            onChangeCallback(value);
+        }
+        hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    return {
+        setValue(value, customText = null) {
+            hiddenInput.value = value;
+            if (customText) {
+                display.innerHTML = `${customText} <i class="fa-solid fa-chevron-down caret-icon"></i>`;
+                return;
+            }
+            const opt = optionsDiv.querySelector(`.custom-select-option[data-value="${value}"]`);
+            if (opt) {
+                display.innerHTML = `${opt.innerHTML} <i class="fa-solid fa-chevron-down caret-icon"></i>`;
+            } else {
+                display.innerHTML = `${value || 'No specific task'} <i class="fa-solid fa-chevron-down caret-icon"></i>`;
+            }
+        },
+        getValue() {
+            return hiddenInput.value;
+        }
+    };
+}
+window.initCustomSelect = initCustomSelect;
+
+

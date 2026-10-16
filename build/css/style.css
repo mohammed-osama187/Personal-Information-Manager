@@ -2829,16 +2829,30 @@ body.dark-theme .fc-theme-standard .fc-day-today {
     align-items: center;
     gap: 12px;
 }
-.note-editor-category-wrapper select {
-    padding: 6px 12px;
+.note-category-custom-select .custom-select-display {
+    padding: 6px 14px;
+    font-size: 13px;
     border-radius: 20px;
+    background: var(--item-bg);
+    min-height: 32px;
+}
+.note-category-custom-select .custom-select-options {
+    min-width: 150px;
+    border-radius: 14px;
+    z-index: 1040;
+}
+.note-heading-custom-select .custom-select-display {
+    padding: 5px 12px;
+    font-size: 12.5px;
+    border-radius: 8px;
+    height: 32px;
     border: 1px solid var(--border-color);
     background: var(--item-bg);
-    color: var(--text-main);
-    font-size: 13px;
-    font-weight: 500;
-    outline: none;
-    cursor: pointer;
+}
+.note-heading-custom-select .custom-select-options {
+    min-width: 145px;
+    border-radius: 12px;
+    z-index: 1040;
 }
 .note-editor-right {
     display: flex;

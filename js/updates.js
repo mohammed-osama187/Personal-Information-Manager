@@ -25,16 +25,26 @@ export function initAppUpdates() {
         });
     }
 
-    // 2. Settings "Check for Updates" button
+    // 2. App-only Update Check visibility (shown only in mobile app, hidden on website)
+    const appUpdateCards = document.querySelectorAll('.app-only-update');
+    if (isNative) {
+        appUpdateCards.forEach(el => {
+            el.style.display = '';
+        });
+        updateSettingsVersionDisplay();
+    } else {
+        appUpdateCards.forEach(el => {
+            el.style.display = 'none';
+        });
+    }
+
+    // Settings "Check for Updates" button
     const checkUpdatesBtn = document.getElementById('check-updates-btn');
     if (checkUpdatesBtn) {
         checkUpdatesBtn.addEventListener('click', () => {
             checkAppUpdate(true);
         });
     }
-
-    // Update current version text in settings
-    updateSettingsVersionDisplay();
 
     // 3. Modal action buttons
     const updateCancelBtn = document.getElementById('update-cancel-btn');

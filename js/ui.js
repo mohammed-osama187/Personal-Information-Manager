@@ -27,71 +27,8 @@ let _detailsKebabCloseHandler = null;
 let settingsInitialized = false;
 
 
-// ==========================================
-// Custom Select dropdown helper
-// ==========================================
-export function initCustomSelect(wrapperId, onChangeCallback) {
-    const wrapper = document.getElementById(wrapperId);
-    if (!wrapper) return null;
-
-    const display = wrapper.querySelector('.custom-select-display');
-    const optionsDiv = wrapper.querySelector('.custom-select-options');
-    const hiddenInput = wrapper.querySelector('input[type="hidden"]');
-
-    if (!display || !optionsDiv || !hiddenInput) return null;
-
-    display.addEventListener('click', (e) => {
-        e.stopPropagation();
-        
-        document.querySelectorAll('.custom-select-options.show').forEach(el => {
-            if (el !== optionsDiv) el.classList.remove('show');
-        });
-        document.querySelectorAll('.custom-select-wrapper.open').forEach(el => {
-            if (el !== wrapper) el.classList.remove('open');
-        });
-
-        optionsDiv.classList.toggle('show');
-        wrapper.classList.toggle('open');
-    });
-
-    optionsDiv.addEventListener('click', (e) => {
-        const option = e.target.closest('.custom-select-option');
-        if (!option) return;
-        
-        e.stopPropagation();
-        const value = option.getAttribute('data-value');
-        hiddenInput.value = value;
-
-        display.innerHTML = `${option.innerHTML} <i class="fa-solid fa-chevron-down caret-icon"></i>`;
-
-        optionsDiv.classList.remove('show');
-        wrapper.classList.remove('open');
-
-        if (onChangeCallback) {
-            onChangeCallback(value);
-        }
-        hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-
-    return {
-        setValue(value, customText = null) {
-            hiddenInput.value = value;
-            if (customText) {
-                display.innerHTML = `${customText} <i class="fa-solid fa-chevron-down caret-icon"></i>`;
-                return;
-            }
-            const opt = optionsDiv.querySelector(`.custom-select-option[data-value="${value}"]`);
-            if (opt) {
-                display.innerHTML = `${opt.innerHTML} <i class="fa-solid fa-chevron-down caret-icon"></i>`;
-            } else {
-                display.innerHTML = `${value || 'No specific task'} <i class="fa-solid fa-chevron-down caret-icon"></i>`;
-            }
-        },
-        getValue() {
-            return hiddenInput.value;
-        }
-    };
-}
+// Re-export custom select dropdown helper from utils.js
+export { initCustomSelect } from './utils.js';
 
 // ==========================================
 // Custom 12h Time Picker component helper
@@ -651,7 +588,7 @@ export function initModalLogic() {
             }
             if (window.customCategorySelect) {
                 const meta = getCategoryMeta('Work');
-                window.customCategorySelect.setValue('Work', `<span class="cat-dot" style="background:${meta.color};"></span> Work`);
+                window.customCategorySelect.setValue('Work', `<i class="fa-solid ${meta.icon}" style="color:${meta.color};"></i> Work`);
             }
             if (window.customFrequencySelect) {
                 window.customFrequencySelect.setValue('none', 'No Repeat');
@@ -892,7 +829,7 @@ export function editItem(id) {
             if (catInput) catInput.value = cat;
             if (window.customCategorySelect) {
                 const meta = getCategoryMeta(cat);
-                window.customCategorySelect.setValue(cat, `<span class="cat-dot" style="background:${meta.color};"></span> ${meta.name}`);
+                window.customCategorySelect.setValue(cat, `<i class="fa-solid ${meta.icon}" style="color:${meta.color};"></i> ${meta.name}`);
             }
 
             if (item.dueDate) document.getElementById('task-due-date').value = item.dueDate;
@@ -1251,7 +1188,7 @@ export function renderTaskCard(item, { isHistory = false, showHabitCalendar = tr
     if (item.type === 'task' || !item.type) {
         const cat = item.category || 'Work';
         const catMeta = getCategoryMeta(cat);
-        categoryBadgeHTML = `<span class="task-category-pill" style="border: 1px solid ${catMeta.color}35; background:${catMeta.bg}; color:${catMeta.color};"><span class="cat-dot" style="background:${catMeta.color};"></span>${catMeta.name}</span>`;
+        categoryBadgeHTML = `<span class="task-category-pill" style="border: 1px solid ${catMeta.color}35; background:${catMeta.bg}; color:${catMeta.color};"><i class="fa-solid ${catMeta.icon}"></i> ${catMeta.name}</span>`;
     }
     if (item.type === 'task') {
         if (item.priority === 'high') flagIcon = ' <i class="fa-solid fa-flag" style="color: #FF4D4F; font-size: 13px;"></i>';
@@ -2307,7 +2244,7 @@ export function showItemDetails(id) {
         if (item.type === 'task' || !item.type) {
             const cat = item.category || 'Work';
             const catMeta = getCategoryMeta(cat);
-            categoryBadgeDetails = `<span class="task-category-pill" style="border: 1px solid ${catMeta.color}35; background:${catMeta.bg}; color:${catMeta.color}; padding: 4px 10px; border-radius: 12px; font-size:12px; font-weight:600;"><span class="cat-dot" style="background:${catMeta.color};"></span>${catMeta.name}</span>`;
+            categoryBadgeDetails = `<span class="task-category-pill" style="border: 1px solid ${catMeta.color}35; background:${catMeta.bg}; color:${catMeta.color}; padding: 4px 10px; border-radius: 12px; font-size:12px; font-weight:600;"><i class="fa-solid ${catMeta.icon}"></i> ${catMeta.name}</span>`;
         }
 
         bodyEl.innerHTML = `

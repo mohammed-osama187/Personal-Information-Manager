@@ -230,12 +230,12 @@
                 <!-- Category Filter Pills Bar -->
                 <div class="category-filter-bar" id="task-category-filter-bar">
                     <button class="btn-category-chip active" data-category="all"><i class="fa-solid fa-layer-group"></i> All</button>
-                    <button class="btn-category-chip" data-category="Work"><span class="cat-dot" style="background:#2F7BF6;"></span> Work</button>
-                    <button class="btn-category-chip" data-category="Personal"><span class="cat-dot" style="background:#52C41A;"></span> Personal</button>
-                    <button class="btn-category-chip" data-category="Study"><span class="cat-dot" style="background:#722ED1;"></span> Study</button>
-                    <button class="btn-category-chip" data-category="Health"><span class="cat-dot" style="background:#FA8C16;"></span> Health</button>
-                    <button class="btn-category-chip" data-category="Finance"><span class="cat-dot" style="background:#13C2C2;"></span> Finance</button>
-                    <button class="btn-category-chip" data-category="Other"><span class="cat-dot" style="background:#8C8C8C;"></span> Other</button>
+                    <button class="btn-category-chip" data-category="Work"><i class="fa-solid fa-briefcase" style="color:#2F7BF6;"></i> Work</button>
+                    <button class="btn-category-chip" data-category="Personal"><i class="fa-solid fa-user" style="color:#52C41A;"></i> Personal</button>
+                    <button class="btn-category-chip" data-category="Study"><i class="fa-solid fa-graduation-cap" style="color:#722ED1;"></i> Study</button>
+                    <button class="btn-category-chip" data-category="Health"><i class="fa-solid fa-heart-pulse" style="color:#FA8C16;"></i> Health</button>
+                    <button class="btn-category-chip" data-category="Finance"><i class="fa-solid fa-wallet" style="color:#13C2C2;"></i> Finance</button>
+                    <button class="btn-category-chip" data-category="Other"><i class="fa-solid fa-tag" style="color:#8C8C8C;"></i> Other</button>
                 </div>
 
                 <div id="dashboard-view-container">
@@ -293,12 +293,12 @@
                     </div>
                     <div class="note-filter-chips-row">
                         <button class="note-filter-chip active" data-filter="all"><i class="fa-solid fa-layer-group"></i> All</button>
-                        <button class="note-filter-chip" data-filter="Work"><span class="cat-dot" style="background:#2F7BF6;"></span> Work</button>
-                        <button class="note-filter-chip" data-filter="Personal"><span class="cat-dot" style="background:#52C41A;"></span> Personal</button>
-                        <button class="note-filter-chip" data-filter="Study"><span class="cat-dot" style="background:#722ED1;"></span> Study</button>
-                        <button class="note-filter-chip" data-filter="Health"><span class="cat-dot" style="background:#FA8C16;"></span> Health</button>
-                        <button class="note-filter-chip" data-filter="Finance"><span class="cat-dot" style="background:#13C2C2;"></span> Finance</button>
-                        <button class="note-filter-chip" data-filter="Other"><span class="cat-dot" style="background:#8C8C8C;"></span> Other</button>
+                        <button class="note-filter-chip" data-filter="Work"><i class="fa-solid fa-briefcase" style="color:#2F7BF6;"></i> Work</button>
+                        <button class="note-filter-chip" data-filter="Personal"><i class="fa-solid fa-user" style="color:#52C41A;"></i> Personal</button>
+                        <button class="note-filter-chip" data-filter="Study"><i class="fa-solid fa-graduation-cap" style="color:#722ED1;"></i> Study</button>
+                        <button class="note-filter-chip" data-filter="Health"><i class="fa-solid fa-heart-pulse" style="color:#FA8C16;"></i> Health</button>
+                        <button class="note-filter-chip" data-filter="Finance"><i class="fa-solid fa-wallet" style="color:#13C2C2;"></i> Finance</button>
+                        <button class="note-filter-chip" data-filter="Other"><i class="fa-solid fa-tag" style="color:#8C8C8C;"></i> Other</button>
                     </div>
                 </div>
 
@@ -509,7 +509,7 @@
                     </form>
                 </div>
 
-                <div class="card" id="settings-app-updates">
+                <div class="card app-only-update" id="settings-app-updates" style="display: none;">
                     <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
                         <div style="display: flex; align-items: center; gap: 16px;">
                             <div style="width: 44px; height: 44px; border-radius: 12px; background: rgba(47, 123, 246, 0.15); color: var(--color-ticktick-blue); display: flex; align-items: center; justify-content: center; font-size: 20px;">
@@ -834,15 +834,15 @@
                         <label>Category</label>
                         <div class="custom-select-wrapper open-upward" id="category-wrapper">
                             <div class="custom-select-display" id="category-display">
-                                <span class="cat-dot" style="background:#2F7BF6;"></span> Work <i class="fa-solid fa-chevron-down caret-icon"></i>
+                                <i class="fa-solid fa-briefcase" style="color:#2F7BF6;"></i> Work <i class="fa-solid fa-chevron-down caret-icon"></i>
                             </div>
                             <div class="custom-select-options" id="category-options">
-                                <div class="custom-select-option" data-value="Work"><span class="cat-dot" style="background:#2F7BF6;"></span> Work</div>
-                                <div class="custom-select-option" data-value="Personal"><span class="cat-dot" style="background:#52C41A;"></span> Personal</div>
-                                <div class="custom-select-option" data-value="Study"><span class="cat-dot" style="background:#722ED1;"></span> Study</div>
-                                <div class="custom-select-option" data-value="Health"><span class="cat-dot" style="background:#FA8C16;"></span> Health</div>
-                                <div class="custom-select-option" data-value="Finance"><span class="cat-dot" style="background:#13C2C2;"></span> Finance</div>
-                                <div class="custom-select-option" data-value="Other"><span class="cat-dot" style="background:#8C8C8C;"></span> Other</div>
+                                <div class="custom-select-option" data-value="Work"><i class="fa-solid fa-briefcase" style="color:#2F7BF6;"></i> Work</div>
+                                <div class="custom-select-option" data-value="Personal"><i class="fa-solid fa-user" style="color:#52C41A;"></i> Personal</div>
+                                <div class="custom-select-option" data-value="Study"><i class="fa-solid fa-graduation-cap" style="color:#722ED1;"></i> Study</div>
+                                <div class="custom-select-option" data-value="Health"><i class="fa-solid fa-heart-pulse" style="color:#FA8C16;"></i> Health</div>
+                                <div class="custom-select-option" data-value="Finance"><i class="fa-solid fa-wallet" style="color:#13C2C2;"></i> Finance</div>
+                                <div class="custom-select-option" data-value="Other"><i class="fa-solid fa-tag" style="color:#8C8C8C;"></i> Other</div>
                             </div>
                             <input type="hidden" id="task-category" value="Work">
                         </div>
@@ -1033,15 +1033,19 @@
             <div class="note-editor-topbar">
                 <div class="note-editor-left">
                     <button id="close-note-editor" class="btn-icon" title="Close / Back"><i class="fa-solid fa-arrow-left"></i></button>
-                    <div class="note-editor-category-wrapper">
-                        <select id="note-category-select" class="note-category-select">
-                            <option value="Work">💼 Work</option>
-                            <option value="Personal">👤 Personal</option>
-                            <option value="Study">📚 Study</option>
-                            <option value="Health">🏃 Health</option>
-                            <option value="Finance">💰 Finance</option>
-                            <option value="Other">🏷️ Other</option>
-                        </select>
+                    <div class="custom-select-wrapper note-category-custom-select" id="note-category-wrapper" style="width: 135px; margin-bottom: 0;">
+                        <div class="custom-select-display" id="note-category-display" style="padding: 6px 12px; font-size: 13px; border-radius: 20px; background: var(--item-bg);">
+                            <i class="fa-solid fa-briefcase" style="color:#2F7BF6;"></i> Work <i class="fa-solid fa-chevron-down caret-icon"></i>
+                        </div>
+                        <div class="custom-select-options" id="note-category-options" style="font-size: 13px; z-index: 1040; border-radius: 14px;">
+                            <div class="custom-select-option" data-value="Work"><i class="fa-solid fa-briefcase" style="color:#2F7BF6;"></i> Work</div>
+                            <div class="custom-select-option" data-value="Personal"><i class="fa-solid fa-user" style="color:#52C41A;"></i> Personal</div>
+                            <div class="custom-select-option" data-value="Study"><i class="fa-solid fa-graduation-cap" style="color:#722ED1;"></i> Study</div>
+                            <div class="custom-select-option" data-value="Health"><i class="fa-solid fa-heart-pulse" style="color:#FA8C16;"></i> Health</div>
+                            <div class="custom-select-option" data-value="Finance"><i class="fa-solid fa-wallet" style="color:#13C2C2;"></i> Finance</div>
+                            <div class="custom-select-option" data-value="Other"><i class="fa-solid fa-tag" style="color:#8C8C8C;"></i> Other</div>
+                        </div>
+                        <input type="hidden" id="note-category-input" value="Work">
                     </div>
                 </div>
                 <div class="note-editor-right">
@@ -1059,12 +1063,18 @@
             <!-- Formatting Toolbar -->
             <div class="note-formatting-toolbar" id="note-formatting-toolbar">
                 <div class="note-toolbar-group">
-                    <select id="note-heading-select" class="note-toolbar-select" title="Text Style">
-                        <option value="p">Normal Text</option>
-                        <option value="h1">Heading 1</option>
-                        <option value="h2">Heading 2</option>
-                        <option value="h3">Heading 3</option>
-                    </select>
+                    <div class="custom-select-wrapper note-heading-custom-select" id="note-heading-wrapper" style="width: 135px; margin-bottom: 0;">
+                        <div class="custom-select-display" id="note-heading-display" style="padding: 5px 10px; font-size: 12.5px; border-radius: 8px; height: 32px; border: 1px solid var(--border-color); background: var(--item-bg);">
+                            <i class="fa-solid fa-paragraph"></i> Normal <i class="fa-solid fa-chevron-down caret-icon"></i>
+                        </div>
+                        <div class="custom-select-options" id="note-heading-options" style="font-size: 12.5px; z-index: 1040; border-radius: 12px;">
+                            <div class="custom-select-option" data-value="p"><i class="fa-solid fa-paragraph"></i> Normal Text</div>
+                            <div class="custom-select-option" data-value="h1"><i class="fa-solid fa-heading"></i> Heading 1</div>
+                            <div class="custom-select-option" data-value="h2"><i class="fa-solid fa-heading" style="font-size: 11px;"></i> Heading 2</div>
+                            <div class="custom-select-option" data-value="h3"><i class="fa-solid fa-heading" style="font-size: 9.5px;"></i> Heading 3</div>
+                        </div>
+                        <input type="hidden" id="note-heading-input" value="p">
+                    </div>
                 </div>
                 <div class="note-toolbar-divider"></div>
                 <div class="note-toolbar-group">

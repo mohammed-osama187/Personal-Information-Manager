@@ -2750,6 +2750,35 @@ const GITHUB_REPO_NAME = 'Personal-Information-Manager';
 const DEFAULT_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/releases/latest/download/FlowTick-latest.apk`;
 const REMOTE_VERSION_URL = `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/main/version.json`;
 
+async function downloadApk(url = DEFAULT_DOWNLOAD_URL) {
+    const isNative = isNativePlatform();
+    if (isNative) {
+        // Escapes the internal WebView and forces Android's default browser (e.g., Chrome)
+        // to handle the download, triggering the native DownloadManager properly.
+        try {
+            if (typeof Browser !== 'undefined' && Browser.open) {
+                await Browser.open({
+                    url: url,
+                    windowName: '_system'
+                });
+                return;
+            }
+            if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
+                await window.Capacitor.Plugins.Browser.open({
+                    url: url,
+                    windowName: '_system'
+                });
+                return;
+            }
+        } catch (e) {
+            console.warn('[Updates] Browser plugin open failed:', e);
+        }
+    }
+    // Normal web environment
+    window.open(url, '_blank');
+}
+window.downloadApk = downloadApk;
+
 function initAppUpdates() {
     const isNative = isNativePlatform();
 
@@ -2769,6 +2798,20 @@ function initAppUpdates() {
             el.style.display = 'none';
         });
     }
+
+    // Intercept click on download links to prevent default WebView navigation
+    const interceptDownloadLink = (linkId) => {
+        const linkEl = document.getElementById(linkId);
+        if (linkEl) {
+            linkEl.addEventListener('click', async (event) => {
+                event.preventDefault();
+                const apkUrl = (linkEl.href && !linkEl.href.endsWith('#')) ? linkEl.href : DEFAULT_DOWNLOAD_URL;
+                await downloadApk(apkUrl);
+            });
+        }
+    };
+    interceptDownloadLink('sidebar-download-link');
+    interceptDownloadLink('settings-download-link');
 
     // 2. App-only Update Check visibility (shown only in mobile app, hidden on website)
     const appUpdateCards = document.querySelectorAll('.app-only-update');
@@ -2911,17 +2954,10 @@ function showUpdateModal(latest) {
     }
 
     if (confirmBtn) {
-        confirmBtn.onclick = async () => {
+        confirmBtn.onclick = async (event) => {
+            if (event) event.preventDefault();
             const downloadUrl = latest.downloadUrl || DEFAULT_DOWNLOAD_URL;
-            try {
-                if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Browser) {
-                    await window.Capacitor.Plugins.Browser.open({ url: downloadUrl });
-                } else {
-                    window.open(downloadUrl, '_blank');
-                }
-            } catch (e) {
-                window.open(downloadUrl, '_blank');
-            }
+            await downloadApk(downloadUrl);
             modal.classList.remove('active');
         };
     }

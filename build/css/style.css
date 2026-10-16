@@ -223,6 +223,10 @@ body {
     flex-direction: column;
     justify-content: space-between;
     height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
+    overflow-y: auto;
+    overflow-x: hidden;
     box-shadow: 5px 0 25px rgba(0, 0, 0, 0.1);
     transition: left 0.3s ease;
 }
@@ -3061,9 +3065,13 @@ body.dark-theme .fc-theme-standard .fc-day-today {
    ========================================== */
 .sidebar-download-banner {
     margin-top: auto;
-    padding: 14px;
+    padding: 12px 14px;
     border-top: 1px solid var(--border-color);
     background: var(--bg-notion-sidebar);
+    position: relative;
+    bottom: 25px;
+    margin-bottom: 25px;
+    flex-shrink: 0;
 }
 .download-banner-inner {
     display: flex;
@@ -3186,4 +3194,14 @@ body.dark-theme .fc-theme-standard .fc-day-today {
     align-items: center;
     justify-content: center;
     gap: 8px;
+}
+
+@media (max-width: 768px) {
+    .sidebar {
+        padding-bottom: max(60px, env(safe-area-inset-bottom, 50px));
+    }
+    .sidebar-download-banner {
+        bottom: 35px;
+        margin-bottom: 35px;
+    }
 }

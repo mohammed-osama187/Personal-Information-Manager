@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build APK
@@ -47,3 +50,30 @@ jobs:
         with:
           name: FlowTick-V2
           path: android/app/build/outputs/apk/debug/app-debug.apk
+      # 1. استخراج رقم الإصدار وتجهيز نسختي الـ APK
+      - name: Prepare APKs with Versioning
+        run: |
+          # استخراج قيمة versionName من ملف build.gradle
+          VERSION_NAME=$(grep "versionName" android/app/build.gradle | awk -F '"' '{print $2}')
+          echo "APP_VERSION=$VERSION_NAME" >> $GITHUB_ENV
+          
+          # العثور على ملف الـ APK الناتج عن البناء
+          APK_PATH=$(find android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          
+          # إنشاء نسختين من الملف
+          cp "$APK_PATH" "FlowTick-v${VERSION_NAME}.apk"
+          cp "$APK_PATH" "FlowTick-latest.apk"
+  
+      # 2. إنشاء الـ GitHub Release ورفع الملفين
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ env.APP_VERSION }}"
+          name: "FlowTick v${{ env.APP_VERSION }}"
+          draft: false
+          prerelease: false
+          files: |
+            FlowTick-v${{ env.APP_VERSION }}.apk
+            FlowTick-latest.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

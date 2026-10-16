@@ -2,7 +2,7 @@ import { showToast } from './utils.js';
 
 const GITHUB_REPO_OWNER = 'mohammed-osama187';
 const GITHUB_REPO_NAME = 'Personal-Information-Manager';
-const DEFAULT_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/releases/latest/download/app-release.apk`;
+const DEFAULT_DOWNLOAD_URL = `https://github.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/releases/latest/download/FlowTick-latest.apk`;
 const REMOTE_VERSION_URL = `https://raw.githubusercontent.com/${GITHUB_REPO_OWNER}/${GITHUB_REPO_NAME}/main/version.json`;
 
 export function initAppUpdates() {
@@ -80,8 +80,8 @@ export async function getCurrentAppInfo() {
         console.warn('[Updates] Failed to get native App info:', e);
     }
     return {
-        versionCode: 1,
-        versionName: '1.0.0'
+        versionCode: 3,
+        versionName: '2.2.0'
     };
 }
 

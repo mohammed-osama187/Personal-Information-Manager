@@ -1,4 +1,6 @@
 {
+  "name": "flowtick",
+  "version": "2.2.0",
   "scripts": {
     "start": "node serve.js",
     "build": "node build.js",

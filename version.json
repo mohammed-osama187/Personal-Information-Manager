@@ -1,6 +1,6 @@
 {
-  "versionCode": 2,
-  "versionName": "1.1.0",
-  "downloadUrl": "https://github.com/mohammed-osama187/Personal-Information-Manager/releases/latest/download/app-release.apk",
-  "releaseNotes": "• New rich Notes section with text formatting (headings, bold, italic, lists, align)\n• Task categories with color tags & category filtering\n• Swipe gestures for tasks (slide right for done, left for won't do)\n• Persistent Pomodoro timer notifications & accurate calendar views"
+  "versionCode": 3,
+  "versionName": "2.2.0",
+  "downloadUrl": "https://github.com/mohammed-osama187/Personal-Information-Manager/releases/latest/download/FlowTick-latest.apk",
+  "releaseNotes": "• FlowTick v2.2.0 Release\n• Added Notes section with rich text formatting (headings, lists, quotes, alignment)\n• Custom UI dropdowns with flat icons & task categories\n• Swipe gestures for tasks\n• In-app updates & direct APK downloads"
 }

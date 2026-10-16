@@ -533,6 +533,14 @@ label {
     margin-top: 0;
 }
 
+#settings-form button[type="submit"],
+#password-form button[type="submit"],
+#save-profile-btn,
+#update-password-btn {
+    position: relative;
+    top: 10px;
+}
+
 .modal {
     display: none;
     position: fixed;

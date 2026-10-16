@@ -2971,6 +2971,48 @@ body.dark-theme .fc-theme-standard .fc-day-today {
 .note-save-status.saved {
     color: #52C41A;
 }
+
+/* Mobile View: Flat icon save button without word */
+@media (max-width: 768px) {
+    .note-editor-topbar {
+        padding: max(12px, env(safe-area-inset-top, 12px)) 14px 10px 14px !important;
+        gap: 8px !important;
+    }
+    .note-editor-left {
+        gap: 8px !important;
+    }
+    .note-editor-right {
+        gap: 6px !important;
+    }
+    .note-category-custom-select {
+        width: 120px !important;
+    }
+    .note-save-status {
+        display: none !important;
+    }
+    #save-note-btn .save-note-text {
+        display: none !important;
+    }
+    #save-note-btn {
+        width: 36px !important;
+        height: 36px !important;
+        min-width: 36px !important;
+        padding: 0 !important;
+        border-radius: 10px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-size: 15px !important;
+        border: 1px solid var(--color-ticktick-blue) !important;
+        background: var(--color-ticktick-blue) !important;
+        color: #ffffff !important;
+        box-shadow: none !important;
+    }
+    #save-note-btn i {
+        margin: 0 !important;
+        font-size: 15px !important;
+    }
+}
 .note-editor-title-container {
     padding: 16px 24px 8px 24px;
 }

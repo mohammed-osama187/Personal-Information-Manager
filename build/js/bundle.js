@@ -2913,8 +2913,8 @@ async function getCurrentAppInfo() {
         console.warn('[Updates] Failed to get native App info:', e);
     }
     return {
-        versionCode: 3,
-        versionName: '2.2.0'
+        versionCode: 4,
+        versionName: '2.3.0'
     };
 }
 
